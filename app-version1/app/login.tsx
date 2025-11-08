@@ -1,16 +1,36 @@
-import { useState } from "react";
-import { View, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform } from "react-native";
+import React, { useState } from "react";
+import {
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
 import { Text, TextInput as PaperInput, Button } from "react-native-paper";
 import { Link, router } from "expo-router";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../firebase/firebaseConfig"; // adjust the path if needed
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleLogin = async () => {
-    console.log("Login:", { email, password });
-    router.replace("/(tabs)/home");
+    setError("");
+    setLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      console.log("✅ Login successful");
+      router.replace("/(tabs)/home"); // navigate after success
+    } catch (err: any) {
+      console.error("❌ Login error:", err.message);
+      setError("Invalid credentials or network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -28,6 +48,7 @@ export default function LoginScreen() {
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
+          keyboardType="email-address"
           mode="outlined"
           style={styles.input}
         />
@@ -47,13 +68,22 @@ export default function LoginScreen() {
           }
         />
 
-        <Button mode="contained" onPress={handleLogin} style={styles.button}>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        <Button
+          mode="contained"
+          onPress={handleLogin}
+          loading={loading}
+          disabled={loading}
+          style={styles.button}
+        >
           Login
         </Button>
 
         <TouchableOpacity>
           <Link href="/signup" style={styles.link}>
-            Don&apos;t have an account? <Text style={{ fontWeight: "600" }}>Sign up</Text>
+            Don’t have an account?{" "}
+            <Text style={{ fontWeight: "600" }}>Sign up</Text>
           </Link>
         </TouchableOpacity>
       </View>
@@ -85,6 +115,11 @@ const styles = StyleSheet.create({
   },
   input: {
     marginBottom: 14,
+  },
+  error: {
+    color: "red",
+    textAlign: "center",
+    marginBottom: 8,
   },
   button: {
     marginTop: 16,

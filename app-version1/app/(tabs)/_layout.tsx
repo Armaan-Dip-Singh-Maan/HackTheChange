@@ -4,13 +4,24 @@ import { Ionicons } from "@expo/vector-icons";
 export default function TabLayout() {
   return (
     <Tabs>
-      {/* HOME TAB */}
+      {/* INDEX TAB (redirects to home) */}
       <Tabs.Screen
         name="index"
         options={{
           title: "Home",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      {/* HOME TAB */}
+      <Tabs.Screen
+        name="home"
+        options={{
+          title: "Navigation",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="map-outline" size={size} color={color} />
           ),
         }}
       />

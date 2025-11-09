@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, ActivityIndicator, StyleSheet, Platform, Text } from "react-native";
+import { View, ActivityIndicator, StyleSheet, Platform, Text, TouchableOpacity } from "react-native";
 import Constants from "expo-constants";
 // Use react-native-maps as the primary map component (works in Expo Go and web)
 import MapView, { Marker, Polyline } from 'react-native-maps';
@@ -36,8 +36,8 @@ interface MapRouteProps {
 }
 
 const MapRoute: React.FC<MapRouteProps> = ({ origin, destination }) => {
-  const [route, setRoute] = useState<any>(null);
-  const [routeCoordinates, setRouteCoordinates] = useState<Array<{latitude: number, longitude: number}>>([]);
+  const [routes, setRoutes] = useState<any[]>([]);
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,7 +75,7 @@ const MapRoute: React.FC<MapRouteProps> = ({ origin, destination }) => {
       // Log the coordinates and URL for debugging
       console.log('Fetching directions from:', from, 'to:', to);
       
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${from[0]},${from[1]};${to[0]},${to[1]}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${from[0]},${from[1]};${to[0]},${to[1]}?geometries=geojson&alternatives=true&access_token=${MAPBOX_TOKEN}`;
       console.log('API URL:', url);
       
       const res = await fetch(url);
@@ -89,27 +89,56 @@ const MapRoute: React.FC<MapRouteProps> = ({ origin, destination }) => {
       const data = await res.json();
       console.log('API Response:', data);
       
+      // Log detailed route information
+      if (data.routes && data.routes.length > 0) {
+        console.log('Route Details:');
+        console.log('- Distance:', data.routes[0].distance, 'meters');
+        console.log('- Duration:', data.routes[0].duration, 'seconds');
+        console.log('- Weight:', data.routes[0].weight);
+        console.log('- Geometry type:', data.routes[0].geometry?.type);
+        console.log('- Coordinate count:', data.routes[0].geometry?.coordinates?.length);
+        console.log('- Waypoints:', JSON.stringify(data.waypoints, null, 2));
+        console.log('- Legs count:', data.routes[0].legs?.length);
+        if (data.routes[0].legs?.length > 0) {
+          console.log('- First leg:', JSON.stringify(data.routes[0].legs[0], null, 2));
+        }
+      }
+      
       if (data.error) {
         throw new Error(`Mapbox API Error: ${data.error}`);
       }
       
       if (data.routes && data.routes.length > 0) {
-        const routeGeometry = data.routes[0].geometry;
-        
-        // For native Mapbox (if available)
-        setRoute({
-          type: "Feature",
-          geometry: routeGeometry,
+        // Process all available routes
+        const processedRoutes = data.routes.map((route: any, index: number) => {
+          const coords = route.geometry.coordinates.map((coord: number[]) => ({
+            latitude: coord[1],
+            longitude: coord[0],
+          }));
+          
+          return {
+            index,
+            geometry: route.geometry,
+            coordinates: coords,
+            distance: route.distance,
+            duration: route.duration,
+            weight: route.weight,
+            distanceKm: (route.distance / 1000).toFixed(1),
+            durationMin: Math.round(route.duration / 60),
+            mapboxFeature: {
+              type: "Feature",
+              geometry: route.geometry,
+            }
+          };
         });
         
-        // For react-native-maps fallback - convert coordinates
-        const coords = routeGeometry.coordinates.map((coord: number[]) => ({
-          latitude: coord[1],
-          longitude: coord[0],
-        }));
-        setRouteCoordinates(coords);
+        setRoutes(processedRoutes);
         
-        console.log('Route loaded successfully with', coords.length, 'coordinates');
+        console.log(`📍 Found ${processedRoutes.length} route(s):`);
+        processedRoutes.forEach((route: any, idx: number) => {
+          console.log(`Route ${idx + 1}: ${route.distanceKm} km, ${route.durationMin} min`);
+        });
+        
       } else {
         console.error('No routes in response:', data);
         throw new Error(`No routes found. API returned: ${JSON.stringify(data)}`);
@@ -167,20 +196,21 @@ const MapRoute: React.FC<MapRouteProps> = ({ origin, destination }) => {
             </View>
           </MapboxGL.PointAnnotation>
 
-          {/* Route Line */}
-          {route && (
-            <MapboxGL.ShapeSource id="routeSource" shape={route}>
+          {/* Route Lines */}
+          {routes.map((route, index) => (
+            <MapboxGL.ShapeSource key={`route-${index}`} id={`routeSource${index}`} shape={route.mapboxFeature}>
               <MapboxGL.LineLayer
-                id="routeLine"
+                id={`routeLine${index}`}
                 style={{
-                  lineColor: "#007AFF",
-                  lineWidth: 4,
+                  lineColor: index === selectedRouteIndex ? "#007AFF" : "#999",
+                  lineWidth: index === selectedRouteIndex ? 5 : 3,
                   lineCap: "round",
                   lineJoin: "round",
+                  lineOpacity: index === selectedRouteIndex ? 1 : 0.6,
                 }}
               />
             </MapboxGL.ShapeSource>
-          )}
+          ))}
         </MapboxGL.MapView>
 
         {loading && (
@@ -220,19 +250,67 @@ const MapRoute: React.FC<MapRouteProps> = ({ origin, destination }) => {
           pinColor="red"
         />
 
-        {/* Route Line */}
-        {routeCoordinates.length > 0 && (
+        {/* Route Lines */}
+        {routes.map((route, index) => (
           <Polyline
-            coordinates={routeCoordinates}
-            strokeColor="#007AFF"
-            strokeWidth={4}
+            key={`polyline-${index}`}
+            coordinates={route.coordinates}
+            strokeColor={index === selectedRouteIndex ? "#007AFF" : "#999"}
+            strokeWidth={index === selectedRouteIndex ? 5 : 3}
+
           />
-        )}
+        ))}
       </MapView>
 
       {loading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      )}
+      
+      {/* Route Selection UI */}
+      {routes.length > 0 && (
+        <View style={styles.routeSelectionContainer}>
+          <Text style={styles.routeSelectionTitle}>Choose Your Route:</Text>
+          {routes.map((route, index) => (
+            <TouchableOpacity
+              key={`route-option-${index}`}
+              style={[
+                styles.routeOption,
+                index === selectedRouteIndex && styles.selectedRouteOption
+              ]}
+              onPress={() => setSelectedRouteIndex(index)}
+            >
+              <View style={styles.routeHeader}>
+                <Text style={[
+                  styles.routeTitle,
+                  index === selectedRouteIndex && styles.selectedRouteTitle
+                ]}>
+                  Route {index + 1}
+                </Text>
+                <View style={styles.routeDetails}>
+                  <Text style={[
+                    styles.routeDistance,
+                    index === selectedRouteIndex && styles.selectedRouteText
+                  ]}>
+                    {route.distanceKm} km
+                  </Text>
+                  <Text style={[
+                    styles.routeTime,
+                    index === selectedRouteIndex && styles.selectedRouteText
+                  ]}>
+                    {route.durationMin} min
+                  </Text>
+                </View>
+              </View>
+              {index === 0 && (
+                <Text style={styles.routeLabel}>Fastest</Text>
+              )}
+              {index === 1 && (
+                <Text style={styles.routeLabel}>Alternative</Text>
+              )}
+            </TouchableOpacity>
+          ))}
         </View>
       )}
       
@@ -304,6 +382,75 @@ const styles = StyleSheet.create({
   platformText: {
     color: "#fff",
     fontSize: 12,
+  },
+  routeSelectionContainer: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    right: 10,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    padding: 12,
+    borderRadius: 8,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  routeSelectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+  },
+  routeOption: {
+    backgroundColor: "rgba(240,240,240,0.9)",
+    padding: 12,
+    borderRadius: 6,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  selectedRouteOption: {
+    backgroundColor: "rgba(0,122,255,0.1)",
+    borderColor: "#007AFF",
+  },
+  routeHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  routeTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+  },
+  selectedRouteTitle: {
+    color: "#007AFF",
+  },
+  routeDetails: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  routeDistance: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#666",
+  },
+  routeTime: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#666",
+  },
+  selectedRouteText: {
+    color: "#007AFF",
+  },
+  routeLabel: {
+    fontSize: 12,
+    color: "#888",
+    marginTop: 4,
+    fontStyle: "italic",
   },
 });
 

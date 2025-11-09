@@ -49,6 +49,7 @@ export default {
     extra: {
       MAPBOX_TOKEN: process.env.EXPO_MAPBOX_PUBLIC_TOKEN,
       MAPBOX_PUBLIC_URL: process.env.EXPO_MAPBOX_PUBLIC_URL,
+      GOOGLE_GENAI_API_KEY: process.env.GOOGLE_GENAI_API_KEY,
     },
   },
 };

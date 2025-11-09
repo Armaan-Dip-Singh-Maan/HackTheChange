@@ -41,53 +41,31 @@ export default function SignupScreen() {
 
   const navigation = useRouter();
 
-  const handleSignup = useCallback(async () => {
-    // Validate password match
+  const handleSignup = async () => {
+    if (!email || !password || !confirm) {
+      setError("Please fill out all fields.");
+      return;
+    }
     if (password !== confirm) {
       setError("Passwords do not match!");
       return;
     }
-
-    // Reset states
     setError("");
     setLoading(true);
-
     try {
-      // Step 1: Create Firebase Auth account
       const cred = await createUserWithEmailAndPassword(auth, email, password);
-      
-      // Step 2: Create Firestore document
-      await setDoc(doc(db, "users", cred.user.uid), {
-        email: cred.user.email,
-        createdAt: serverTimestamp(),
-        totalCO2Saved: 0,
-      });
-
-      // Step 3: Clear loading and show success message
+      // await setDoc(doc(db, "users", cred.user.uid), {
+      //   email: cred.user.email,
+      //   createdAt: serverTimestamp(),
+      // });
       setLoading(false);
-      
-      // Step 4: Show alert and navigate
-      Alert.alert(
-        "Success",
-        "Account created successfully! Please sign in.",
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              // Navigate after alert is dismissed
-              navigation.push("/login");
-            },
-          },
-        ],
-        { cancelable: false }
-      );
-
-    } catch (error: any) {
-      console.error("Signup error:", error);
-      setError(error?.message ?? "Error creating account. Please try again.");
+      navigation.replace("/login");
+    } catch (err: any) {
+      console.error("Signup error:", err);
+      setError(err.message || "Error creating account. Please try again.");
       setLoading(false);
     }
-  }, [email, password, confirm, navigation]);
+  };
 
   return (
     <KeyboardAvoidingView

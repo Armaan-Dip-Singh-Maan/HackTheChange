@@ -9,7 +9,8 @@ import {
 import { Text, TextInput as PaperInput, Button } from "react-native-paper";
 import { Link, router } from "expo-router";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../firebase/firebaseConfig";
+import { auth, db } from "../firebase/firebaseConfig";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 
 const ACCENT = "#16A34A";
 const BG = "#F5F7FF";
@@ -37,11 +38,47 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const ensureUserDoc = async (uid: string, emailAddr: string | null) => {
+    const ref = doc(db, "users", uid);
+    const snap = await getDoc(ref);
+
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        email: emailAddr ?? "",
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+        vehicleCategory: "Sedan",
+        engineType: "gas",
+        lifetimeCO2Kg: 0,
+        greenPoints: 0,
+      });
+    } else {
+      await setDoc(
+        ref,
+        {
+          lastLoginAt: serverTimestamp(),
+          vehicleCategory: snap.data().vehicleCategory ?? "Sedan",
+          engineType: snap.data().engineType ?? "gas",
+          lifetimeCO2Kg:
+            typeof snap.data().lifetimeCO2Kg === "number"
+              ? snap.data().lifetimeCO2Kg
+              : 0,
+          greenPoints:
+            typeof snap.data().greenPoints === "number"
+              ? snap.data().greenPoints
+              : 0,
+        },
+        { merge: true }
+      );
+    }
+  };
+
   const handleLogin = async () => {
     setError("");
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      await ensureUserDoc(cred.user.uid, cred.user.email);
       router.replace("/(tabs)/home");
     } catch (err: any) {
       setError("Invalid credentials or network error. Please try again.");

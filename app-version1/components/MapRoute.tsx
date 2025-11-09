@@ -1,19 +1,13 @@
 import React, { useEffect, useState } from "react";
-import {
-  View,
-  ActivityIndicator,
-  StyleSheet,
-  Platform,
-  Text,
-  TouchableOpacity,
-  useColorScheme,
-} from "react-native";
+import { View, ActivityIndicator, StyleSheet, Platform, Text, TouchableOpacity, useColorScheme } from "react-native";
 import Constants from "expo-constants";
 import MapView, { Marker, Polyline } from "react-native-maps";
 
 const EXPO_EXTRA = (Constants.expoConfig && Constants.expoConfig.extra) || {};
 const MAPBOX_TOKEN =
-  EXPO_EXTRA.MAPBOX_TOKEN || process.env.EXPO_MAPBOX_PUBLIC_TOKEN || "";
+  (EXPO_EXTRA.MAPBOX_TOKEN as string | undefined) ||
+  (process.env.EXPO_PUBLIC_MAPBOX_TOKEN as string | undefined) ||
+  "";
 
 let MapboxGL: any = null;
 if (Platform.OS !== "web") {
@@ -23,53 +17,52 @@ if (Platform.OS !== "web") {
     if (MapboxGL && MAPBOX_TOKEN && typeof MapboxGL.setAccessToken === "function") {
       MapboxGL.setAccessToken(MAPBOX_TOKEN);
     }
-  } catch (e) {
+  } catch {
     MapboxGL = null;
-    if (__DEV__) {
-      console.warn("Native Mapbox not available, using react-native-maps fallback:", e);
-    }
   }
 }
 
 type Coordinate = [number, number];
 
-interface MapRouteProps {
+export interface MapRouteProps {
   origin: Coordinate;
-  destination: Coordinate;
-  hideRouteBox?: boolean; // 👈 added optional prop
+  destination?: Coordinate | null;
+  hideRouteBox?: boolean;
+  onRoutesChange?: (routes: Array<{ index: number; distanceM: number; durationSec: number }>) => void;
+  onRouteSelected?: (index: number) => void;
+  co2PerRoute?: number[];
 }
 
 const MapRoute: React.FC<MapRouteProps> = ({
   origin,
   destination,
   hideRouteBox = false,
+  onRoutesChange,
+  onRouteSelected,
+  co2PerRoute,
 }) => {
   const [routes, setRoutes] = useState<any[]>([]);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState<number>(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
-  useEffect(() => {
-    if (origin && destination) {
-      fetchDirections(origin, destination);
-    }
-  }, [origin, destination]);
-
-  const validateCoordinate = (coord: Coordinate): boolean => {
+  const validateCoordinate = (coord: Coordinate) => {
     if (!Array.isArray(coord) || coord.length !== 2) return false;
     const [lng, lat] = coord;
-    return (
-      typeof lng === "number" &&
-      typeof lat === "number" &&
-      lng >= -180 &&
-      lng <= 180 &&
-      lat >= -90 &&
-      lat <= 90
-    );
+    return typeof lng === "number" && typeof lat === "number" && lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90;
   };
+
+  const sameCoord = (a: Coordinate, b: Coordinate) => Array.isArray(a) && Array.isArray(b) && a.length === 2 && b.length === 2 && a[0] === b[0] && a[1] === b[1];
+
+  useEffect(() => {
+    if (origin && destination && !sameCoord(origin, destination)) fetchDirections(origin, destination);
+    else {
+      setRoutes([]);
+      setLoading(false);
+    }
+  }, [origin, destination]);
 
   const fetchDirections = async (from: Coordinate, to: Coordinate) => {
     setLoading(true);
@@ -78,70 +71,96 @@ const MapRoute: React.FC<MapRouteProps> = ({
       if (!MAPBOX_TOKEN) throw new Error("Mapbox token not configured");
       if (!validateCoordinate(from)) throw new Error(`Invalid origin: ${JSON.stringify(from)}`);
       if (!validateCoordinate(to)) throw new Error(`Invalid destination: ${JSON.stringify(to)}`);
-
       const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${from[0]},${from[1]};${to[0]},${to[1]}?geometries=geojson&alternatives=true&access_token=${MAPBOX_TOKEN}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`API Error ${res.status}: ${await res.text()}`);
       const data = await res.json();
       if (data.error) throw new Error(`Mapbox API Error: ${data.error}`);
       if (!data.routes?.length) throw new Error("No routes found");
-
       const processed = data.routes.map((r: any, i: number) => ({
         index: i,
-        coordinates: r.geometry.coordinates.map((c: number[]) => ({
-          latitude: c[1],
-          longitude: c[0],
-        })),
+        coordinates: r.geometry.coordinates.map((c: number[]) => ({ latitude: c[1], longitude: c[0] })),
         distanceKm: (r.distance / 1000).toFixed(1),
         durationMin: Math.round(r.duration / 60),
+        distanceM: r.distance,
+        durationSec: Math.round(r.duration),
         mapboxFeature: { type: "Feature", geometry: r.geometry },
       }));
       setRoutes(processed);
-    } catch (err) {
-      console.error("Error fetching directions:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch directions");
+      if (typeof onRoutesChange === "function") {
+        onRoutesChange(
+          processed.map((p: any) => ({
+            index: p.index,
+            distanceM: p.distanceM,
+            durationSec: p.durationSec,
+          }))
+        );
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to fetch directions");
     } finally {
       setLoading(false);
     }
   };
 
-  if (!origin || !destination) {
+  if (!origin) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>Please set both origin and destination</Text>
+        <Text style={styles.errorText}>Set your starting point</Text>
       </View>
     );
   }
+
+  if (!destination) {
+    if (MapboxGL && Platform.OS !== "web") {
+      return (
+        <View style={styles.container}>
+          <MapboxGL.MapView style={styles.map} styleURL="mapbox://styles/mapbox/streets-v12">
+            <MapboxGL.Camera zoomLevel={12} centerCoordinate={origin} animationMode="flyTo" animationDuration={800} />
+            <MapboxGL.PointAnnotation id="origin" coordinate={origin}>
+              <View style={styles.annotationContainer}>
+                <View style={styles.annotationFill} />
+              </View>
+            </MapboxGL.PointAnnotation>
+          </MapboxGL.MapView>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.container}>
+        <MapView
+          style={styles.map}
+          initialRegion={{
+            latitude: origin[1],
+            longitude: origin[0],
+            latitudeDelta: 0.06,
+            longitudeDelta: 0.06,
+          }}
+          showsUserLocation={false}
+          showsMyLocationButton={false}
+        >
+          <Marker coordinate={{ latitude: origin[1], longitude: origin[0] }} title="Origin" pinColor="green" />
+        </MapView>
+      </View>
+    );
+  }
+
+  const bestSaved = co2PerRoute && co2PerRoute.length > 0 ? Math.max(...co2PerRoute.filter((n) => typeof n === "number")) : undefined;
 
   if (error) {
     return (
       <View style={styles.center}>
         <Text style={styles.errorText}>Error: {error}</Text>
-        <Text style={styles.errorSubtext}>
-          {!MAPBOX_TOKEN
-            ? "Mapbox token not configured"
-            : "Check your internet connection"}
-        </Text>
+        <Text style={styles.errorSubtext}>{!MAPBOX_TOKEN ? "Mapbox token not configured" : "Check your internet connection"}</Text>
       </View>
     );
   }
 
-  // 🌎 Native Mapbox version (if available)
   if (MapboxGL && Platform.OS !== "web") {
     return (
       <View style={styles.container}>
-        <MapboxGL.MapView
-          style={styles.map}
-          styleURL="mapbox://styles/mapbox/streets-v12"
-        >
-          <MapboxGL.Camera
-            zoomLevel={12}
-            centerCoordinate={origin}
-            animationMode="flyTo"
-            animationDuration={1000}
-          />
-
-          {/* Markers */}
+        <MapboxGL.MapView style={styles.map} styleURL="mapbox://styles/mapbox/streets-v12">
+          <MapboxGL.Camera zoomLevel={12} centerCoordinate={origin} animationMode="flyTo" animationDuration={1000} />
           <MapboxGL.PointAnnotation id="origin" coordinate={origin}>
             <View style={styles.annotationContainer}>
               <View style={styles.annotationFill} />
@@ -149,33 +168,18 @@ const MapRoute: React.FC<MapRouteProps> = ({
           </MapboxGL.PointAnnotation>
           <MapboxGL.PointAnnotation id="destination" coordinate={destination}>
             <View style={styles.annotationContainer}>
-              <View
-                style={[styles.annotationFill, { backgroundColor: "#FF3B30" }]}
-              />
+              <View style={[styles.annotationFill, { backgroundColor: "#FF3B30" }]} />
             </View>
           </MapboxGL.PointAnnotation>
-
-          {/* Route Lines */}
           {routes.map((r, i) => (
-            <MapboxGL.ShapeSource
-              key={`route-${i}`}
-              id={`routeSource${i}`}
-              shape={r.mapboxFeature}
-            >
+            <MapboxGL.ShapeSource key={`route-${i}`} id={`routeSource${i}`} shape={r.mapboxFeature}>
               <MapboxGL.LineLayer
                 id={`routeLine${i}`}
-                style={{
-                  lineColor: i === selectedRouteIndex ? "#007AFF" : "#999",
-                  lineWidth: i === selectedRouteIndex ? 5 : 3,
-                  lineCap: "round",
-                  lineJoin: "round",
-                  lineOpacity: i === selectedRouteIndex ? 1 : 0.6,
-                }}
+                style={{ lineColor: i === selectedRouteIndex ? "#007AFF" : "#999", lineWidth: i === selectedRouteIndex ? 5 : 3, lineCap: "round", lineJoin: "round", lineOpacity: i === selectedRouteIndex ? 1 : 0.6 }}
               />
             </MapboxGL.ShapeSource>
           ))}
         </MapboxGL.MapView>
-
         {loading && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#007AFF" />
@@ -185,7 +189,6 @@ const MapRoute: React.FC<MapRouteProps> = ({
     );
   }
 
-  // 🗺 Fallback to react-native-maps (Expo Go / Web)
   return (
     <View style={styles.container}>
       <MapView
@@ -199,26 +202,10 @@ const MapRoute: React.FC<MapRouteProps> = ({
         showsUserLocation={false}
         showsMyLocationButton={false}
       >
-        {/* Markers */}
-        <Marker
-          coordinate={{ latitude: origin[1], longitude: origin[0] }}
-          title="Origin"
-          pinColor="green"
-        />
-        <Marker
-          coordinate={{ latitude: destination[1], longitude: destination[0] }}
-          title="Destination"
-          pinColor="red"
-        />
-
-        {/* Route Lines */}
+        <Marker coordinate={{ latitude: origin[1], longitude: origin[0] }} title="Origin" pinColor="green" />
+        <Marker coordinate={{ latitude: destination[1], longitude: destination[0] }} title="Destination" pinColor="red" />
         {routes.map((r, i) => (
-          <Polyline
-            key={`poly-${i}`}
-            coordinates={r.coordinates}
-            strokeColor={i === selectedRouteIndex ? "#007AFF" : "#999"}
-            strokeWidth={i === selectedRouteIndex ? 5 : 3}
-          />
+          <Polyline key={`poly-${i}`} coordinates={r.coordinates} strokeColor={i === selectedRouteIndex ? "#007AFF" : "#999"} strokeWidth={i === selectedRouteIndex ? 5 : 3} />
         ))}
       </MapView>
 
@@ -228,86 +215,39 @@ const MapRoute: React.FC<MapRouteProps> = ({
         </View>
       )}
 
-      {/* 🚫 Hide this block if hideRouteBox=true */}
       {!hideRouteBox && routes.length > 0 && (
-        <View
-          style={[
-            styles.routeSelectionContainer,
-            {
-              backgroundColor: isDark
-                ? "rgba(40,40,40,0.95)"
-                : "rgba(255,255,255,0.95)",
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.routeSelectionTitle,
-              { color: isDark ? "#fff" : "#333" },
-            ]}
-          >
-            Choose Your Route:
-          </Text>
+        <View style={[styles.routeSelectionContainer, { backgroundColor: isDark ? "rgba(40,40,40,0.95)" : "rgba(255,255,255,0.95)" }]}>
+          <Text style={[styles.routeSelectionTitle, { color: isDark ? "#fff" : "#333" }]}>Choose Your Route:</Text>
           {routes.map((r, i) => (
             <TouchableOpacity
               key={`route-option-${i}`}
-              style={[
-                styles.routeOption,
-                i === selectedRouteIndex && styles.selectedRouteOption,
-              ]}
-              onPress={() => setSelectedRouteIndex(i)}
+              style={[styles.routeOption, i === selectedRouteIndex && styles.selectedRouteOption]}
+              onPress={() => {
+                setSelectedRouteIndex(i);
+                if (typeof onRouteSelected === "function") onRouteSelected(i);
+              }}
             >
               <View style={styles.routeHeader}>
-                <Text
-                  style={[
-                    styles.routeTitle,
-                    i === selectedRouteIndex && styles.selectedRouteTitle,
-                    { color: isDark ? "#ddd" : "#333" },
-                  ]}
-                >
-                  Route {i + 1}
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={[styles.routeTitle, i === selectedRouteIndex && styles.selectedRouteTitle, { color: isDark ? "#ddd" : "#333" }]}>{i === 0 ? "Fastest" : "Alternative"}</Text>
+                  {typeof co2PerRoute?.[i] === "number" && (
+                    <Text style={[styles.co2Inline, bestSaved !== undefined && co2PerRoute?.[i] === bestSaved && styles.co2InlineGreen]}>
+                      {"  "}{co2PerRoute?.[i].toFixed(3)} kg CO₂ saved
+                    </Text>
+                  )}
+                </View>
                 <View style={styles.routeDetails}>
-                  <Text
-                    style={[
-                      styles.routeDistance,
-                      i === selectedRouteIndex && styles.selectedRouteText,
-                      { color: isDark ? "#aaa" : "#666" },
-                    ]}
-                  >
-                    {r.distanceKm} km
-                  </Text>
-                  <Text
-                    style={[
-                      styles.routeTime,
-                      i === selectedRouteIndex && styles.selectedRouteText,
-                      { color: isDark ? "#aaa" : "#666" },
-                    ]}
-                  >
-                    {r.durationMin} min
-                  </Text>
+                  <Text style={[styles.routeDistance, i === selectedRouteIndex && styles.selectedRouteText, { color: isDark ? "#aaa" : "#666" }]}>{r.distanceKm} km</Text>
+                  <Text style={[styles.routeTime, i === selectedRouteIndex && styles.selectedRouteText, { color: isDark ? "#aaa" : "#666" }]}>{r.durationMin} min</Text>
                 </View>
               </View>
-              {i === 0 && (
-                <Text style={[styles.routeLabel, { color: isDark ? "#999" : "#888" }]}>
-                  Fastest
-                </Text>
-              )}
-              {i === 1 && (
-                <Text style={[styles.routeLabel, { color: isDark ? "#999" : "#888" }]}>
-                  Alternative
-                </Text>
-              )}
             </TouchableOpacity>
           ))}
         </View>
       )}
 
-      {/* Platform indicator */}
       <View style={styles.platformIndicator}>
-        <Text style={styles.platformText}>
-          {MapboxGL ? "Using Native Mapbox" : "Using React Native Maps"}
-        </Text>
+        <Text style={styles.platformText}>{MapboxGL ? "Using Native Mapbox" : "Using React Native Maps"}</Text>
       </View>
     </View>
   );
@@ -316,76 +256,19 @@ const MapRoute: React.FC<MapRouteProps> = ({
 const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  loadingOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.8)",
-  },
-  annotationContainer: {
-    width: 30,
-    height: 30,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  annotationFill: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#007AFF",
-  },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
+  loadingOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(255,255,255,0.8)" },
+  annotationContainer: { width: 30, height: 30, alignItems: "center", justifyContent: "center" },
+  annotationFill: { width: 20, height: 20, borderRadius: 10, backgroundColor: "#007AFF" },
   errorText: { fontSize: 16, color: "#FF3B30", textAlign: "center", marginBottom: 8 },
   errorSubtext: { fontSize: 14, color: "#666", textAlign: "center" },
-  platformIndicator: {
-    position: "absolute",
-    bottom: 10,
-    left: 10,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
+  platformIndicator: { position: "absolute", bottom: 10, left: 10, backgroundColor: "rgba(0,0,0,0.7)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
   platformText: { color: "#fff", fontSize: 12 },
-
-  // Route UI
-  routeSelectionContainer: {
-    position: "absolute",
-    bottom: 20,
-    left: 16,
-    right: 16,
-    padding: 16,
-    borderRadius: 12,
-    elevation: 5,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-  },
+  routeSelectionContainer: { position: "absolute", bottom: 20, left: 16, right: 16, padding: 16, borderRadius: 12, elevation: 5, shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 8 },
   routeSelectionTitle: { fontSize: 16, fontWeight: "600", marginBottom: 8 },
-  routeOption: {
-    backgroundColor: "rgba(240,240,240,0.9)",
-    padding: 12,
-    borderRadius: 6,
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
+  routeOption: { backgroundColor: "rgba(240,240,240,0.9)", padding: 12, borderRadius: 6, marginBottom: 6, borderWidth: 1, borderColor: "transparent" },
   selectedRouteOption: { backgroundColor: "rgba(0,122,255,0.1)", borderColor: "#007AFF" },
-  routeHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
+  routeHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   routeTitle: { fontSize: 14, fontWeight: "600" },
   selectedRouteTitle: { color: "#007AFF" },
   routeDetails: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -393,6 +276,8 @@ const styles = StyleSheet.create({
   routeTime: { fontSize: 14, fontWeight: "500" },
   selectedRouteText: { color: "#007AFF" },
   routeLabel: { fontSize: 12, marginTop: 4, fontStyle: "italic" },
+  co2Inline: { marginLeft: 6, fontSize: 13, fontWeight: "600", color: "#555" },
+  co2InlineGreen: { color: "#16A34A" },
 });
 
 export default MapRoute;

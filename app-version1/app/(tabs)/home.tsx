@@ -1,27 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  StyleSheet,
-  Alert,
-  Keyboard,
-  TouchableOpacity,
-  FlatList,
-  useColorScheme,
-} from 'react-native';
-import {
-  Text,
-  Card,
-  Button,
-  TextInput,
-  IconButton,
-} from 'react-native-paper';
+import { View, StyleSheet, Alert, Keyboard, TouchableOpacity, useColorScheme } from 'react-native';
+import { Text, Card, Button, TextInput, IconButton } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import Autocomplete from 'react-native-autocomplete-input';
 import MapRoute from '../../components/MapRoute';
+import { auth, db } from '../../firebase/firebaseConfig';
+import { doc, onSnapshot, updateDoc, serverTimestamp, increment } from 'firebase/firestore';
+import { estimateCO2SavedPerRoute, EngineType, VehicleCategory } from '../../components/emissions';
 
 type Coordinate = [number, number];
+
+const ACCENT = '#16A34A';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
@@ -37,10 +28,18 @@ export default function HomeScreen() {
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
 
+  const [vehicleCategory, setVehicleCategory] = useState<VehicleCategory>('Sedan');
+  const [engineType, setEngineType] = useState<EngineType>('gas');
+
+  const [lastRoutes, setLastRoutes] = useState<Array<{ index:number; distanceM:number; durationSec:number }>>([]);
+  const [savedPerRoute, setSavedPerRoute] = useState<number[]>([]);
+  const [selectedRouteIdx, setSelectedRouteIdx] = useState<number>(0);
+
   const fallbackLocation: Coordinate = [-114.0719, 51.0447];
 
   const MAPBOX_TOKEN =
     Constants.expoConfig?.extra?.MAPBOX_TOKEN ||
+    process.env.EXPO_MAPBOX_PUBLIC_MAPBOX_TOKEN ||
     process.env.EXPO_MAPBOX_PUBLIC_TOKEN ||
     '';
 
@@ -52,9 +51,7 @@ export default function HomeScreen() {
   ];
 
   useEffect(() => {
-    if (!MAPBOX_TOKEN && __DEV__) {
-      console.warn('Mapbox token not found.');
-    }
+    if (!MAPBOX_TOKEN && __DEV__) console.warn('Mapbox token not found.');
   }, []);
 
   useEffect(() => {
@@ -63,23 +60,80 @@ export default function HomeScreen() {
         try {
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (status !== 'granted') return;
-          const location = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-          const coords: Coordinate = [
-            location.coords.longitude,
-            location.coords.latitude,
-          ];
+          const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          const coords: Coordinate = [location.coords.longitude, location.coords.latitude];
           setOrigin(coords);
           const placeName = await reverseGeocode(coords);
           setOriginText(placeName);
           setShowMap(true);
-        } catch (error) {
-          console.error('Error auto-getting location:', error);
-        }
+        } catch (error) {}
       })();
     }
   }, [origin, destination, showMap]);
+
+  useEffect(() => {
+    const u = auth.currentUser;
+    if (!u) return;
+    const ref = doc(db, 'users', u.uid);
+    const unsub = onSnapshot(ref, (snap) => {
+      if (!snap.exists()) return;
+      const d = snap.data() || {};
+      if (d.vehicleCategory) setVehicleCategory(d.vehicleCategory as VehicleCategory);
+      if (d.engineType) setEngineType(d.engineType as EngineType);
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (!lastRoutes.length) return;
+    const ordered = [...lastRoutes].sort((a,b)=>a.index-b.index);
+    const saved = estimateCO2SavedPerRoute(
+      ordered.map(r => ({ distanceM: r.distanceM, durationSec: r.durationSec })),
+      vehicleCategory,
+      engineType
+    );
+    setSavedPerRoute(saved);
+  }, [lastRoutes, vehicleCategory, engineType]);
+
+  useEffect(() => {
+    if (!destination) return;
+    let sub: Location.LocationSubscription | null = null;
+    let credited = false;
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      sub = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, distanceInterval: 10 },
+        async (loc) => {
+          if (!destination) return;
+          const cur: Coordinate = [loc.coords.longitude, loc.coords.latitude];
+          const dKm = haversineKm(cur, destination);
+          if (dKm <= 0.05 && !credited) {
+            credited = true;
+            await creditSavedForSelection();
+          }
+        }
+      );
+    })();
+    return () => { if (sub) sub.remove(); };
+  }, [destination, savedPerRoute, selectedRouteIdx]);
+
+  const creditSavedForSelection = async () => {
+    try {
+      const u = auth.currentUser;
+      if (!u) return;
+      if (!savedPerRoute.length) return;
+      const saved = +(savedPerRoute[selectedRouteIdx] || 0);
+      if (saved <= 0) return;
+      await updateDoc(doc(db, 'users', u.uid), {
+        lifetimeCO2Kg: increment(saved),
+        points: increment(saved * 3),
+        lastTripSavingsKg: saved,
+        lastTripAt: serverTimestamp(),
+      });
+      Alert.alert('Trip complete', `Credited ${saved.toFixed(3)} kg CO₂ saved.`);
+    } catch {}
+  };
 
   const reverseGeocode = async ([lon, lat]: Coordinate) => {
     try {
@@ -87,9 +141,7 @@ export default function HomeScreen() {
       const res = await fetch(url);
       const data = await res.json();
       if (data.features?.[0]) return data.features[0].place_name;
-    } catch {
-      /* ignore */
-    }
+    } catch {}
     return 'Current Location';
   };
 
@@ -101,18 +153,12 @@ export default function HomeScreen() {
         Alert.alert('Permission Denied', 'Location permission is required.');
         return;
       }
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const coords: Coordinate = [
-        location.coords.longitude,
-        location.coords.latitude,
-      ];
+      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const coords: Coordinate = [location.coords.longitude, location.coords.latitude];
       setOrigin(coords);
       const name = await reverseGeocode(coords);
       setOriginText(name);
     } catch (error) {
-      console.error('Error getting location:', error);
       setOrigin(fallbackLocation);
       setOriginText('Calgary, Alberta');
       Alert.alert('Location Error', 'Using fallback (Calgary).');
@@ -128,8 +174,7 @@ export default function HomeScreen() {
       const res = await fetch(url);
       const data = await res.json();
       return data.features?.[0]?.center || null;
-    } catch (error) {
-      console.error('Geocode error:', error);
+    } catch {
       return null;
     }
   };
@@ -140,29 +185,24 @@ export default function HomeScreen() {
       Alert.alert('Error', 'Mapbox token missing.');
       return;
     }
-
     setGeocoding(true);
     try {
       let finalOrigin = origin;
       let finalDestination = destination;
-
       if (!finalOrigin && originText.trim()) {
         finalOrigin = await geocodeLocation(originText);
         if (finalOrigin) setOrigin(finalOrigin);
       }
-
       if (!finalDestination && destinationText.trim()) {
         finalDestination = await geocodeLocation(destinationText);
         if (finalDestination) setDestination(finalDestination);
       }
-
       if (!finalOrigin || !finalDestination) {
         Alert.alert('Missing info', 'Please set both origin and destination.');
         return;
       }
       setShowMap(true);
-    } catch (error) {
-      console.error('Error finding route:', error);
+    } catch {
     } finally {
       setGeocoding(false);
     }
@@ -172,9 +212,7 @@ export default function HomeScreen() {
     if (!origin) return Alert.alert('Missing Location', 'Need current location first.');
     try {
       const [lon, lat] = origin;
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
-        category
-      )}.json?proximity=${lon},${lat}&types=poi&limit=1&access_token=${MAPBOX_TOKEN}`;
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(category)}.json?proximity=${lon},${lat}&types=poi&limit=1&access_token=${MAPBOX_TOKEN}`;
       const res = await fetch(url);
       const data = await res.json();
       const place = data.features?.[0];
@@ -196,45 +234,38 @@ export default function HomeScreen() {
     setDestination(null);
     setOriginText('');
     setDestinationText('');
+    setLastRoutes([]);
+    setSavedPerRoute([]);
+    setSelectedRouteIdx(0);
   };
 
   const fetchSuggestions = async (text: string, set: Function) => {
     if (text.length < 2) return set([]);
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
-      text
-    )}.json?autocomplete=true&types=place,address,poi&limit=5&access_token=${MAPBOX_TOKEN}`;
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(text)}.json?autocomplete=true&types=place,address,poi&limit=5&access_token=${MAPBOX_TOKEN}`;
     const res = await fetch(url);
     const data = await res.json();
     set(data.features || []);
   };
 
+  const onRoutesChange = (rs: Array<{ index:number; distanceM:number; durationSec:number }>) => {
+    setLastRoutes(rs);
+  };
+
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: isDark ? '#000' : '#fff' },
-      ]}
-    >
+    <View style={[styles.container, { backgroundColor: isDark ? '#000' : '#fff' }]}>
       {showMap && origin ? (
         <View style={styles.fullScreenMapContainer}>
           <MapRoute
             origin={origin}
             destination={destination || origin}
             hideRouteBox={!destination}
+            onRoutesChange={onRoutesChange}
+            onRouteSelected={setSelectedRouteIdx}
+            co2PerRoute={savedPerRoute}
           />
 
           <View style={styles.topOverlay}>
-            <View
-              style={[
-                styles.inputOverlayContainer,
-                {
-                  backgroundColor: isDark
-                    ? 'rgba(35,35,35,0.9)'
-                    : 'rgba(255,255,255,0.95)',
-                },
-              ]}
-            >
-              {/* FROM */}
+            <View style={[styles.inputOverlayContainer, { backgroundColor: isDark ? 'rgba(35,35,35,0.9)' : 'rgba(255,255,255,0.95)' }]}>
               <Autocomplete
                 data={originSuggestions}
                 value={originText}
@@ -256,18 +287,10 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                   ),
                 }}
-                inputContainerStyle={[
-                  styles.overlayInput,
-                  {
-                    backgroundColor: isDark
-                      ? 'rgba(50,50,50,0.9)'
-                      : 'rgba(255,255,255,0.9)',
-                  },
-                ]}
+                inputContainerStyle={[styles.overlayInput, { backgroundColor: isDark ? 'rgba(50,50,50,0.9)' : 'rgba(255,255,255,0.9)' }]}
                 placeholder="Current location or address"
               />
 
-              {/* TO */}
               <Autocomplete
                 data={destinationSuggestions}
                 value={destinationText}
@@ -289,32 +312,15 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                   ),
                 }}
-                inputContainerStyle={[
-                  styles.overlayInput,
-                  {
-                    backgroundColor: isDark
-                      ? 'rgba(50,50,50,0.9)'
-                      : 'rgba(255,255,255,0.9)',
-                  },
-                ]}
+                inputContainerStyle={[styles.overlayInput, { backgroundColor: isDark ? 'rgba(50,50,50,0.9)' : 'rgba(255,255,255,0.9)' }]}
                 placeholder="Enter destination"
               />
 
               <View style={styles.overlayButtonRow}>
-                <Button
-                  mode="contained"
-                  onPress={handleFindRoute}
-                  style={styles.overlayButton}
-                  loading={geocoding}
-                >
+                <Button mode="contained" onPress={handleFindRoute} style={styles.overlayButton} loading={geocoding} buttonColor={ACCENT}>
                   {geocoding ? 'Finding...' : 'Update Route'}
                 </Button>
-                <Button
-                  mode="outlined"
-                  onPress={handleClearRoute}
-                  style={styles.overlayClearButton}
-                  compact
-                >
+                <Button mode="outlined" onPress={handleClearRoute} style={styles.overlayClearButton} compact>
                   Clear
                 </Button>
               </View>
@@ -323,17 +329,8 @@ export default function HomeScreen() {
         </View>
       ) : (
         <View style={styles.initialContainer}>
-          <Card
-            style={[
-              styles.initialCard,
-              { backgroundColor: isDark ? '#1c1c1e' : '#fff' },
-            ]}
-          >
-            <Card.Title
-              title="Plan Your Route"
-              titleStyle={{ color: isDark ? '#fff' : '#000' }}
-              left={(props) => <IconButton {...props} icon="map-marker-path" />}
-            />
+          <Card style={[styles.initialCard, { backgroundColor: isDark ? '#1c1c1e' : '#fff' }]}>
+            <Card.Title title="Plan Your Route" titleStyle={{ color: isDark ? '#fff' : '#000' }} left={(props) => <IconButton {...props} icon="map-marker-path" />} />
             <Card.Content>
               <TextInput
                 label="From (GPS or address)"
@@ -342,33 +339,14 @@ export default function HomeScreen() {
                 mode="outlined"
                 style={styles.input}
                 placeholder="Use GPS or enter address"
-                right={
-                  <TextInput.Icon
-                    icon={loadingLocation ? 'loading' : 'crosshairs-gps'}
-                    onPress={handleUseCurrentLocation}
-                    disabled={loadingLocation}
-                  />
-                }
+                right={<TextInput.Icon icon={loadingLocation ? 'loading' : 'crosshairs-gps'} onPress={handleUseCurrentLocation} disabled={loadingLocation} />}
               />
-              <TextInput
-                label="To (address or place)"
-                value={destinationText}
-                onChangeText={setDestinationText}
-                mode="outlined"
-                style={styles.input}
-                placeholder="Enter destination"
-              />
+              <TextInput label="To (address or place)" value={destinationText} onChangeText={setDestinationText} mode="outlined" style={styles.input} placeholder="Enter destination" />
               <View style={styles.quickIconRow}>
                 {quickCategories.map((cat) => (
                   <Button
                     key={cat.name}
-                    icon={() => (
-                      <MaterialCommunityIcons
-                        name={cat.icon as any}
-                        size={20}
-                        color={isDark ? '#fff' : '#333'}
-                      />
-                    )}
+                    icon={() => <MaterialCommunityIcons name={cat.icon as any} size={20} color={isDark ? '#fff' : '#333'} />}
                     mode="outlined"
                     compact
                     style={styles.quickButton}
@@ -378,12 +356,7 @@ export default function HomeScreen() {
                   </Button>
                 ))}
               </View>
-              <Button
-                mode="contained"
-                onPress={handleFindRoute}
-                style={styles.button}
-                loading={geocoding}
-              >
+              <Button mode="contained" onPress={handleFindRoute} style={styles.button} loading={geocoding} buttonColor={ACCENT}>
                 {geocoding ? 'Finding...' : 'Find Route'}
               </Button>
             </Card.Content>
@@ -394,16 +367,24 @@ export default function HomeScreen() {
   );
 }
 
+function haversineKm(a: Coordinate, b: Coordinate) {
+  const R = 6371;
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(b[1] - a[1]);
+  const dLon = toRad(b[0] - a[0]);
+  const lat1 = toRad(a[1]);
+  const lat2 = toRad(b[1]);
+  const sx = Math.sin(dLat / 2);
+  const sy = Math.sin(dLon / 2);
+  const c = 2 * Math.asin(Math.sqrt(sx * sx + Math.cos(lat1) * Math.cos(lat2) * sy * sy));
+  return R * c;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   fullScreenMapContainer: { flex: 1, position: 'relative' },
   topOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000 },
-  inputOverlayContainer: {
-    margin: 16,
-    padding: 12,
-    borderRadius: 12,
-    elevation: 5,
-  },
+  inputOverlayContainer: { margin: 16, padding: 12, borderRadius: 12, elevation: 5 },
   overlayInput: { marginBottom: 8 },
   overlayButtonRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
   overlayButton: { flex: 1 },
@@ -411,18 +392,8 @@ const styles = StyleSheet.create({
   initialContainer: { flex: 1, justifyContent: 'center', padding: 16 },
   initialCard: { marginBottom: 20 },
   input: { marginBottom: 12 },
-  quickIconRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-around',
-    marginVertical: 10,
-  },
+  quickIconRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', marginVertical: 10 },
   quickButton: { flexGrow: 1, marginHorizontal: 4, marginVertical: 4 },
   button: { marginTop: 8 },
-  suggestion: {
-    padding: 8,
-    fontSize: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
-  },
+  suggestion: { padding: 8, fontSize: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#ccc' },
 });

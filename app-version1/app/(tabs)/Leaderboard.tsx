@@ -3,6 +3,7 @@ import { View, ScrollView, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
+
 // fake data
 const leaderboardData = {
   leaderboard_title: 'Top CO₂ Savers',

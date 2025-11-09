@@ -170,7 +170,7 @@ export default function ProfileScreen() {
               theme={{
                 colors: {
                   primary: ACCENT,
-                  surfaceVariant: isDark ? "#3c3c3cff" : "#E5E7EB",
+                  surfaceVariant: isDark ? "#373d38ff" : "#E5E7EB",
                 },
               }}
             />

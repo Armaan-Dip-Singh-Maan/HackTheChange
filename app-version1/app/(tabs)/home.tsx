@@ -60,14 +60,14 @@ export default function HomeScreen() {
       ];
 
       setOrigin(coords);
-      setOriginText(`Current Location (${location.coords.latitude.toFixed(4)}, ${location.coords.longitude.toFixed(4)})`);
+      setOriginText('Current Location');
       
       console.log('Got real GPS location:', coords);
     } catch (error) {
       console.error('Error getting location:', error);
       // Fallback to Calgary coordinates
       setOrigin(currentLocation);
-      setOriginText('Current Location (Calgary - Fallback)');
+      setOriginText('Current Location');
       Alert.alert('Location Error', 'Could not get current location, using Calgary as fallback.');
     } finally {
       setLoadingLocation(false);
@@ -96,7 +96,7 @@ export default function HomeScreen() {
         finalOrigin = await geocodeLocation(originText);
         if (finalOrigin) {
           setOrigin(finalOrigin);
-          setOriginText(originText + ` (${finalOrigin[1].toFixed(4)}, ${finalOrigin[0].toFixed(4)})`);
+          // Keep the original text without coordinates
           console.log('Geocoded origin to:', finalOrigin);
         }
       }
@@ -107,7 +107,7 @@ export default function HomeScreen() {
         finalDestination = await geocodeLocation(destinationText);
         if (finalDestination) {
           setDestination(finalDestination);
-          setDestinationText(destinationText + ` (${finalDestination[1].toFixed(4)}, ${finalDestination[0].toFixed(4)})`);
+          // Keep the original text without coordinates
           console.log('Geocoded destination to:', finalDestination);
         }
       }
@@ -197,220 +197,147 @@ export default function HomeScreen() {
     }
   };
 
-  const testMapboxAPI = async () => {
-    try {
-      // Test with very simple, known working coordinates (New York to Philadelphia)
-      const testOrigin = [-74.0059, 40.7128]; // NYC
-      const testDestination = [-75.1652, 39.9526]; // Philadelphia
-      
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${testOrigin[0]},${testOrigin[1]};${testDestination[0]},${testDestination[1]}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
-      
-      console.log('Testing Mapbox API with URL:', url);
-      
-      const response = await fetch(url);
-      const data = await response.json();
-      
-      console.log('Test API Response:', data);
-      
-      if (data.routes && data.routes.length > 0) {
-        Alert.alert('API Test Success', 'Mapbox API is working correctly!');
-      } else {
-        Alert.alert('API Test Failed', `No routes found. Response: ${JSON.stringify(data)}`);
-      }
-    } catch (error) {
-      console.error('API Test Error:', error);
-      Alert.alert('API Test Error', `Error: ${error}`);
-    }
-  };
+
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text variant="headlineMedium" style={styles.title}>
-          🗺️ Navigation Demo
-        </Text>
-        <Text variant="bodyMedium" style={styles.subtitle}>
-          Find routes using Mapbox Directions API
-        </Text>
-        {!MAPBOX_TOKEN && (
+    <View style={styles.container}>
+      {/* Warning only if token missing */}
+      {!MAPBOX_TOKEN && (
+        <View style={styles.warningBanner}>
           <Text variant="bodySmall" style={styles.warning}>
             ⚠️ Mapbox token not configured
           </Text>
-        )}
-      </View>
-
-      {/* Location Input Card */}
-      <Card style={styles.card}>
-        <Card.Title 
-          title="Plan Your Route" 
-          left={(props) => <IconButton {...props} icon="map-marker-path" />} 
-        />
-        <Card.Content>
-          {/* Origin Input */}
-          <View style={styles.inputRow}>
-            <TextInput
-              label="From (GPS, address, or coordinates)"
-              value={originText}
-              onChangeText={handleOriginTextChange}
-              mode="outlined"
-              style={styles.input}
-              placeholder="e.g. 123 Main St, Calgary or use GPS"
-              right={
-                <TextInput.Icon
-                  icon={loadingLocation ? "loading" : "crosshairs-gps"}
-                  onPress={handleUseCurrentLocation}
-                  disabled={loadingLocation}
-                />
-              }
-            />
-          </View>
-
-          {/* Destination Input */}
-          <View style={styles.inputRow}>
-            <TextInput
-              label="To (address, place name, or coordinates)"
-              value={destinationText}
-              onChangeText={handleDestinationTextChange}
-              mode="outlined"
-              style={styles.input}
-              placeholder="e.g. Downtown Calgary, University of Calgary"
-            />
-          </View>
-
-          {/* Quick Destinations */}
-          <Text variant="labelMedium" style={styles.sectionLabel}>
-            Quick Destinations
-          </Text>
-          <View style={styles.chipContainer}>
-            {quickDestinations.map((dest, idx) => (
-              <Chip
-                key={idx}
-                onPress={() => handleQuickDestination(dest)}
-                style={styles.chip}
-                mode={destinationText === dest.name ? 'flat' : 'outlined'}
-              >
-                {dest.name}
-              </Chip>
-            ))}
-          </View>
-
-          <View style={styles.buttonRow}>
-            <Button
-              mode="contained"
-              onPress={handleFindRoute}
-              style={[styles.button, styles.findButton]}
-              disabled={geocoding || !MAPBOX_TOKEN || (!origin && !originText.trim()) || (!destination && !destinationText.trim())}
-              loading={geocoding}
-            >
-              {geocoding ? 'Finding Locations...' : 'Find Route'}
-            </Button>
-            {showMap && (
-              <Button
-                mode="outlined"
-                onPress={handleClearRoute}
-                style={[styles.button, styles.clearButton]}
-              >
-                Clear
-              </Button>
-            )}
-          </View>
-
-          {/* Debug/Test Section */}
-          {__DEV__ && (
-            <View style={styles.debugSection}>
-              <View style={styles.buttonRow}>
-                <Button
-                  mode="outlined"
-                  onPress={testMapboxAPI}
-                  style={[styles.button, styles.testButton]}
-                  disabled={!MAPBOX_TOKEN}
-                >
-                  Test API
-                </Button>
-                <Button
-                  mode="outlined"
-                  onPress={async () => {
-                    if (originText.trim()) {
-                      const result = await geocodeLocation(originText);
-                      Alert.alert('Geocoding Test', result ? `Found: ${result[1].toFixed(4)}, ${result[0].toFixed(4)}` : 'No results found');
-                    } else {
-                      Alert.alert('Geocoding Test', 'Enter text in Origin field first');
-                    }
-                  }}
-                  style={[styles.button, styles.testButton]}
-                  disabled={!MAPBOX_TOKEN}
-                >
-                  Test Geocoding
-                </Button>
-              </View>
-              <Text variant="bodySmall" style={styles.debugInfo}>
-                Debug: Origin: {origin ? `[${origin[0].toFixed(4)}, ${origin[1].toFixed(4)}]` : 'Not set'}
-              </Text>
-              <Text variant="bodySmall" style={styles.debugInfo}>
-                Debug: Destination: {destination ? `[${destination[0].toFixed(4)}, ${destination[1].toFixed(4)}]` : 'Not set'}
-              </Text>
-            </View>
-          )}
-        </Card.Content>
-      </Card>
-
-      {/* Map Display */}
-      {showMap && origin && destination && (
-        <Card style={styles.card}>
-          <Card.Title 
-            title="Route Map" 
-            left={(props) => <IconButton {...props} icon="map" />} 
-          />
-          <Card.Content>
-            <View style={styles.mapContainer}>
-              <MapRoute origin={origin} destination={destination} />
-            </View>
-          </Card.Content>
-        </Card>
+        </View>
       )}
 
-      {/* Info Card */}
-      <Card style={styles.card}>
-        <Card.Title 
-          title="How to Use" 
-          left={(props) => <IconButton {...props} icon="information" />} 
-        />
-        <Card.Content>
-          <Text variant="bodyMedium" style={styles.infoText}>
-            1. Set your starting location using "Current Location" button
-          </Text>
-          <Text variant="bodyMedium" style={styles.infoText}>
-            2. Choose a destination from quick options or enter manually
-          </Text>
-          <Text variant="bodyMedium" style={styles.infoText}>
-            3. Tap "Find Route" to see directions on the map
-          </Text>
-          <Text variant="bodySmall" style={styles.noteText}>
-            Note: This uses Mapbox Directions API for route calculation
-          </Text>
-        </Card.Content>
-      </Card>
-    </ScrollView>
+      {/* Full Screen Map with Overlays */}
+      {showMap && origin && destination ? (
+        <View style={styles.fullScreenMapContainer}>
+          <MapRoute origin={origin} destination={destination} />
+          
+          {/* Top Overlay - Input Fields */}
+          <View style={styles.topOverlay}>
+            <View style={styles.inputOverlayContainer}>
+              <TextInput
+                label="From"
+                value={originText}
+                onChangeText={handleOriginTextChange}
+                mode="outlined"
+                style={styles.overlayInput}
+                textColor="#000000"
+                placeholder="Current location or address"
+                dense
+                right={
+                  <TextInput.Icon
+                    icon={loadingLocation ? "loading" : "crosshairs-gps"}
+                    onPress={handleUseCurrentLocation}
+                    disabled={loadingLocation}
+                  />
+                }
+              />
+              <TextInput
+                label="To"
+                value={destinationText}
+                onChangeText={handleDestinationTextChange}
+                mode="outlined"
+                style={styles.overlayInput}
+                textColor="#000000"
+                placeholder="Enter destination"
+                dense
+              />
+              <View style={styles.overlayButtonRow}>
+                <Button
+                  mode="contained"
+                  onPress={handleFindRoute}
+                  style={styles.overlayButton}
+                  disabled={geocoding || !MAPBOX_TOKEN || (!origin && !originText.trim()) || (!destination && !destinationText.trim())}
+                  loading={geocoding}
+                  compact
+                >
+                  {geocoding ? 'Finding...' : 'Update Route'}
+                </Button>
+                <Button
+                  mode="outlined"
+                  onPress={handleClearRoute}
+                  style={styles.overlayClearButton}
+                  compact
+                >
+                  Clear
+                </Button>
+              </View>
+            </View>
+          </View>
+        </View>
+      ) : (
+        /* Initial Input Screen */
+        <View style={styles.initialContainer}>
+          <Card style={styles.initialCard}>
+            <Card.Title 
+              title="Plan Your Route" 
+              left={(props) => <IconButton {...props} icon="map-marker-path" />} 
+            />
+            <Card.Content>
+              <View style={styles.inputRow}>
+                <TextInput
+                  label="From (GPS, address, or coordinates)"
+                  value={originText}
+                  onChangeText={handleOriginTextChange}
+                  mode="outlined"
+                  style={styles.input}
+                  textColor="#000000"
+                  placeholder="e.g. 123 Main St, Calgary or use GPS"
+                  right={
+                    <TextInput.Icon
+                      icon={loadingLocation ? "loading" : "crosshairs-gps"}
+                      onPress={handleUseCurrentLocation}
+                      disabled={loadingLocation}
+                    />
+                  }
+                />
+              </View>
+
+              <View style={styles.inputRow}>
+                <TextInput
+                  label="To (address, place name, or coordinates)"
+                  value={destinationText}
+                  onChangeText={handleDestinationTextChange}
+                  mode="outlined"
+                  style={styles.input}
+                  textColor="#000000"
+                  placeholder="e.g. Downtown Calgary, University of Calgary"
+                />
+              </View>
+
+              <View style={styles.buttonRow}>
+                <Button
+                  mode="contained"
+                  onPress={handleFindRoute}
+                  style={[styles.button, styles.findButton]}
+                  disabled={geocoding || !MAPBOX_TOKEN || (!origin && !originText.trim()) || (!destination && !destinationText.trim())}
+                  loading={geocoding}
+                >
+                  {geocoding ? 'Finding Locations...' : 'Find Route'}
+                </Button>
+              </View>
+            </Card.Content>
+          </Card>
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#ffffff',
   },
   header: {
     padding: 20,
     paddingBottom: 15,
-  },
-  title: {
-    fontWeight: '700',
-    color: '#2d5016',
-  },
-  subtitle: {
-    color: '#666',
-    marginTop: 5,
+    backgroundColor: '#f5f5f5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
   },
   warning: {
     color: '#ff9800',
@@ -426,12 +353,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
   },
   sectionLabel: {
     marginTop: 16,
     marginBottom: 8,
-    color: '#666',
+    color: '#333333',
+    fontWeight: '500',
   },
   chipContainer: {
     flexDirection: 'row',
@@ -461,27 +389,60 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
   },
-  infoText: {
+  fullScreenMapContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  topOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+  },
+  inputOverlayContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    margin: 16,
+    padding: 12,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  overlayInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
     marginBottom: 8,
-    color: '#333',
   },
-  noteText: {
-    marginTop: 8,
-    color: '#666',
-    fontStyle: 'italic',
-  },
-  debugSection: {
-    marginTop: 16,
-    padding: 8,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 8,
-  },
-  testButton: {
+  overlayButtonRow: {
+    flexDirection: 'row',
+    gap: 8,
     marginTop: 8,
   },
-  debugInfo: {
-    fontSize: 10,
-    color: '#666',
-    marginTop: 4,
+  overlayButton: {
+    flex: 1,
   },
+  overlayClearButton: {
+    flex: 1,
+  },
+  initialContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 16,
+  },
+  initialCard: {
+    marginBottom: 20,
+  },
+  warningBanner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(255, 152, 0, 0.9)',
+    padding: 12,
+    zIndex: 2000,
+  },
+
+
 });

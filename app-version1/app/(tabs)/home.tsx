@@ -1,136 +1,192 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
-import { Text, Card, Button, TextInput, IconButton, Chip } from 'react-native-paper';
-import MapRoute from '../../components/MapRoute';
+import {
+  View,
+  StyleSheet,
+  Alert,
+  Keyboard,
+  TouchableOpacity,
+  FlatList,
+  useColorScheme,
+} from 'react-native';
+import {
+  Text,
+  Card,
+  Button,
+  TextInput,
+  IconButton,
+} from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
+import Autocomplete from 'react-native-autocomplete-input';
+import MapRoute from '../../components/MapRoute';
 
 type Coordinate = [number, number];
 
 export default function HomeScreen() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
   const [origin, setOrigin] = useState<Coordinate | null>(null);
   const [destination, setDestination] = useState<Coordinate | null>(null);
   const [originText, setOriginText] = useState('');
   const [destinationText, setDestinationText] = useState('');
+  const [originSuggestions, setOriginSuggestions] = useState<any[]>([]);
+  const [destinationSuggestions, setDestinationSuggestions] = useState<any[]>([]);
   const [showMap, setShowMap] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
-  
-  // Sample locations (Calgary, Alberta coordinates - verified working coordinates)
-  const currentLocation: Coordinate = [-114.0719, 51.0447];
-  
-  const quickDestinations = [
-    { name: 'Downtown Calgary', coord: [-114.0708, 51.0486] as Coordinate },
-    { name: 'University of Calgary', coord: [-114.1294, 51.0775] as Coordinate },
-    { name: 'Calgary Airport (Fixed)', coord: [-114.0207, 51.1225] as Coordinate }, // Corrected airport coordinates
-    { name: 'Test Route (Short)', coord: [-114.0719, 51.0500] as Coordinate }, // Very close to origin for testing
-  ];
 
-  // Check if Mapbox token is available
-  const EXPO_EXTRA = (Constants.expoConfig && Constants.expoConfig.extra) || {};
-  const MAPBOX_TOKEN = EXPO_EXTRA.MAPBOX_TOKEN || process.env.EXPO_MAPBOX_PUBLIC_TOKEN || '';
+  const fallbackLocation: Coordinate = [-114.0719, 51.0447];
+
+  const MAPBOX_TOKEN =
+    Constants.expoConfig?.extra?.MAPBOX_TOKEN ||
+    process.env.EXPO_MAPBOX_PUBLIC_TOKEN ||
+    '';
+
+  const quickCategories = [
+    { name: 'Gas', icon: 'gas-station', query: 'gas station' },
+    { name: 'EV', icon: 'car-electric', query: 'EV charging station' },
+    { name: 'Food', icon: 'silverware-fork-knife', query: 'restaurant' },
+    { name: 'Coffee', icon: 'coffee', query: 'cafe' },
+  ];
 
   useEffect(() => {
     if (!MAPBOX_TOKEN && __DEV__) {
-      console.warn('Mapbox token not found. Check your .env.local file.');
+      console.warn('Mapbox token not found.');
     }
   }, []);
+
+  useEffect(() => {
+    if (!origin && !destination && !showMap) {
+      (async () => {
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== 'granted') return;
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          const coords: Coordinate = [
+            location.coords.longitude,
+            location.coords.latitude,
+          ];
+          setOrigin(coords);
+          const placeName = await reverseGeocode(coords);
+          setOriginText(placeName);
+          setShowMap(true);
+        } catch (error) {
+          console.error('Error auto-getting location:', error);
+        }
+      })();
+    }
+  }, [origin, destination, showMap]);
+
+  const reverseGeocode = async ([lon, lat]: Coordinate) => {
+    try {
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_TOKEN}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.features?.[0]) return data.features[0].place_name;
+    } catch {
+      /* ignore */
+    }
+    return 'Current Location';
+  };
 
   const handleUseCurrentLocation = async () => {
     setLoadingLocation(true);
     try {
-      // Request permissions
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
-          'Permission Denied', 
-          'Location permission is required to use current location feature.'
-        );
+        Alert.alert('Permission Denied', 'Location permission is required.');
         return;
       }
-
-      // Get current location
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-
       const coords: Coordinate = [
         location.coords.longitude,
         location.coords.latitude,
       ];
-
       setOrigin(coords);
-      setOriginText(`Current Location (${location.coords.latitude.toFixed(4)}, ${location.coords.longitude.toFixed(4)})`);
-      
-      console.log('Got real GPS location:', coords);
+      const name = await reverseGeocode(coords);
+      setOriginText(name);
     } catch (error) {
       console.error('Error getting location:', error);
-      // Fallback to Calgary coordinates
-      setOrigin(currentLocation);
-      setOriginText('Current Location (Calgary - Fallback)');
-      Alert.alert('Location Error', 'Could not get current location, using Calgary as fallback.');
+      setOrigin(fallbackLocation);
+      setOriginText('Calgary, Alberta');
+      Alert.alert('Location Error', 'Using fallback (Calgary).');
     } finally {
       setLoadingLocation(false);
     }
   };
 
-  const handleQuickDestination = (dest: { name: string; coord: Coordinate }) => {
-    setDestination(dest.coord);
-    setDestinationText(dest.name);
+  const geocodeLocation = async (locationText: string): Promise<Coordinate | null> => {
+    try {
+      const encoded = encodeURIComponent(locationText.trim());
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?limit=1&access_token=${MAPBOX_TOKEN}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      return data.features?.[0]?.center || null;
+    } catch (error) {
+      console.error('Geocode error:', error);
+      return null;
+    }
   };
 
   const handleFindRoute = async () => {
+    Keyboard.dismiss();
     if (!MAPBOX_TOKEN) {
-      Alert.alert('Configuration Error', 'Mapbox token not configured. Check your .env.local file.');
+      Alert.alert('Error', 'Mapbox token missing.');
       return;
     }
 
     setGeocoding(true);
-    let finalOrigin = origin;
-    let finalDestination = destination;
-
     try {
-      // If origin is not set but we have text, try to geocode it
+      let finalOrigin = origin;
+      let finalDestination = destination;
+
       if (!finalOrigin && originText.trim()) {
-        console.log('Geocoding origin text:', originText);
         finalOrigin = await geocodeLocation(originText);
-        if (finalOrigin) {
-          setOrigin(finalOrigin);
-          setOriginText(originText + ` (${finalOrigin[1].toFixed(4)}, ${finalOrigin[0].toFixed(4)})`);
-          console.log('Geocoded origin to:', finalOrigin);
-        }
+        if (finalOrigin) setOrigin(finalOrigin);
       }
 
-      // If destination is not set but we have text, try to geocode it
       if (!finalDestination && destinationText.trim()) {
-        console.log('Geocoding destination text:', destinationText);
         finalDestination = await geocodeLocation(destinationText);
-        if (finalDestination) {
-          setDestination(finalDestination);
-          setDestinationText(destinationText + ` (${finalDestination[1].toFixed(4)}, ${finalDestination[0].toFixed(4)})`);
-          console.log('Geocoded destination to:', finalDestination);
-        }
+        if (finalDestination) setDestination(finalDestination);
       }
 
-      // Check if we have both coordinates now
       if (!finalOrigin || !finalDestination) {
-        Alert.alert(
-          'Missing Location', 
-          'Please set both origin and destination. You can:\n• Use the GPS button for current location\n• Select from quick destinations\n• Type an address (e.g., "1234 Main St, Calgary")\n\nMake sure addresses are detailed enough for geocoding.'
-        );
+        Alert.alert('Missing info', 'Please set both origin and destination.');
         return;
       }
-      
-      // Log coordinates for debugging
-      console.log('Finding route from origin:', finalOrigin, 'to destination:', finalDestination);
-      console.log('Mapbox token available:', !!MAPBOX_TOKEN);
-      
       setShowMap(true);
     } catch (error) {
-      console.error('Error in handleFindRoute:', error);
-      Alert.alert('Error', 'Could not process locations. Please try again.');
+      console.error('Error finding route:', error);
     } finally {
       setGeocoding(false);
+    }
+  };
+
+  const handleQuickCategory = async (category: string) => {
+    if (!origin) return Alert.alert('Missing Location', 'Need current location first.');
+    try {
+      const [lon, lat] = origin;
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
+        category
+      )}.json?proximity=${lon},${lat}&types=poi&limit=1&access_token=${MAPBOX_TOKEN}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const place = data.features?.[0];
+      if (place) {
+        setDestination(place.center);
+        setDestinationText(place.text);
+        setShowMap(true);
+      } else {
+        Alert.alert('No Results', `No ${category} found nearby.`);
+      }
+    } catch {
+      Alert.alert('Error', 'Could not search nearby place.');
     }
   };
 
@@ -142,346 +198,231 @@ export default function HomeScreen() {
     setDestinationText('');
   };
 
-  const geocodeLocation = async (locationText: string): Promise<Coordinate | null> => {
-    try {
-      if (!MAPBOX_TOKEN) {
-        throw new Error('Mapbox token not configured');
-      }
-      
-      // Use Mapbox Geocoding API to convert address to coordinates
-      const encodedLocation = encodeURIComponent(locationText.trim());
-      const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedLocation}.json?access_token=${MAPBOX_TOKEN}&limit=1`;
-      
-      console.log('Geocoding location:', locationText);
-      console.log('Geocoding URL:', geocodeUrl);
-      
-      const response = await fetch(geocodeUrl);
-      const data = await response.json();
-      
-      console.log('Geocoding response:', data);
-      
-      if (data.features && data.features.length > 0) {
-        const coordinates = data.features[0].center;
-        console.log('Found coordinates:', coordinates);
-        return [coordinates[0], coordinates[1]] as Coordinate;
-      } else {
-        console.log('No coordinates found for:', locationText);
-        return null;
-      }
-    } catch (error) {
-      console.error('Geocoding error:', error);
-      return null;
-    }
-  };
-
-  const handleOriginTextChange = async (text: string) => {
-    setOriginText(text);
-    
-    // If user clears the text, clear the origin
-    if (!text.trim()) {
-      setOrigin(null);
-      return;
-    }
-    
-    // Try to geocode after user stops typing (debounce effect)
-    // For now, we'll do it on blur or when they press find route
-  };
-
-  const handleDestinationTextChange = async (text: string) => {
-    setDestinationText(text);
-    
-    // If user clears the text, clear the destination
-    if (!text.trim()) {
-      setDestination(null);
-      return;
-    }
-  };
-
-  const testMapboxAPI = async () => {
-    try {
-      // Test with very simple, known working coordinates (New York to Philadelphia)
-      const testOrigin = [-74.0059, 40.7128]; // NYC
-      const testDestination = [-75.1652, 39.9526]; // Philadelphia
-      
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${testOrigin[0]},${testOrigin[1]};${testDestination[0]},${testDestination[1]}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
-      
-      console.log('Testing Mapbox API with URL:', url);
-      
-      const response = await fetch(url);
-      const data = await response.json();
-      
-      console.log('Test API Response:', data);
-      
-      if (data.routes && data.routes.length > 0) {
-        Alert.alert('API Test Success', 'Mapbox API is working correctly!');
-      } else {
-        Alert.alert('API Test Failed', `No routes found. Response: ${JSON.stringify(data)}`);
-      }
-    } catch (error) {
-      console.error('API Test Error:', error);
-      Alert.alert('API Test Error', `Error: ${error}`);
-    }
+  const fetchSuggestions = async (text: string, set: Function) => {
+    if (text.length < 2) return set([]);
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
+      text
+    )}.json?autocomplete=true&types=place,address,poi&limit=5&access_token=${MAPBOX_TOKEN}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    set(data.features || []);
   };
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text variant="headlineMedium" style={styles.title}>
-          🗺️ Navigation Demo
-        </Text>
-        <Text variant="bodyMedium" style={styles.subtitle}>
-          Find routes using Mapbox Directions API
-        </Text>
-        {!MAPBOX_TOKEN && (
-          <Text variant="bodySmall" style={styles.warning}>
-            ⚠️ Mapbox token not configured
-          </Text>
-        )}
-      </View>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: isDark ? '#000' : '#fff' },
+      ]}
+    >
+      {showMap && origin ? (
+        <View style={styles.fullScreenMapContainer}>
+          <MapRoute
+            origin={origin}
+            destination={destination || origin}
+            hideRouteBox={!destination}
+          />
 
-      {/* Location Input Card */}
-      <Card style={styles.card}>
-        <Card.Title 
-          title="Plan Your Route" 
-          left={(props) => <IconButton {...props} icon="map-marker-path" />} 
-        />
-        <Card.Content>
-          {/* Origin Input */}
-          <View style={styles.inputRow}>
-            <TextInput
-              label="From (GPS, address, or coordinates)"
-              value={originText}
-              onChangeText={handleOriginTextChange}
-              mode="outlined"
-              style={styles.input}
-              placeholder="e.g. 123 Main St, Calgary or use GPS"
-              right={
-                <TextInput.Icon
-                  icon={loadingLocation ? "loading" : "crosshairs-gps"}
-                  onPress={handleUseCurrentLocation}
-                  disabled={loadingLocation}
-                />
-              }
-            />
-          </View>
-
-          {/* Destination Input */}
-          <View style={styles.inputRow}>
-            <TextInput
-              label="To (address, place name, or coordinates)"
-              value={destinationText}
-              onChangeText={handleDestinationTextChange}
-              mode="outlined"
-              style={styles.input}
-              placeholder="e.g. Downtown Calgary, University of Calgary"
-            />
-          </View>
-
-          {/* Quick Destinations */}
-          <Text variant="labelMedium" style={styles.sectionLabel}>
-            Quick Destinations
-          </Text>
-          <View style={styles.chipContainer}>
-            {quickDestinations.map((dest, idx) => (
-              <Chip
-                key={idx}
-                onPress={() => handleQuickDestination(dest)}
-                style={styles.chip}
-                mode={destinationText === dest.name ? 'flat' : 'outlined'}
-              >
-                {dest.name}
-              </Chip>
-            ))}
-          </View>
-
-          <View style={styles.buttonRow}>
-            <Button
-              mode="contained"
-              onPress={handleFindRoute}
-              style={[styles.button, styles.findButton]}
-              disabled={geocoding || !MAPBOX_TOKEN || (!origin && !originText.trim()) || (!destination && !destinationText.trim())}
-              loading={geocoding}
+          <View style={styles.topOverlay}>
+            <View
+              style={[
+                styles.inputOverlayContainer,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(35,35,35,0.9)'
+                    : 'rgba(255,255,255,0.95)',
+                },
+              ]}
             >
-              {geocoding ? 'Finding Locations...' : 'Find Route'}
-            </Button>
-            {showMap && (
-              <Button
-                mode="outlined"
-                onPress={handleClearRoute}
-                style={[styles.button, styles.clearButton]}
-              >
-                Clear
-              </Button>
-            )}
-          </View>
+              {/* FROM */}
+              <Autocomplete
+                data={originSuggestions}
+                value={originText}
+                onChangeText={(text) => {
+                  setOriginText(text);
+                  fetchSuggestions(text, setOriginSuggestions);
+                }}
+                flatListProps={{
+                  keyExtractor: (item) => item.id,
+                  renderItem: ({ item }) => (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setOriginText(item.place_name);
+                        setOrigin(item.center);
+                        setOriginSuggestions([]);
+                      }}
+                    >
+                      <Text style={styles.suggestion}>{item.place_name}</Text>
+                    </TouchableOpacity>
+                  ),
+                }}
+                inputContainerStyle={[
+                  styles.overlayInput,
+                  {
+                    backgroundColor: isDark
+                      ? 'rgba(50,50,50,0.9)'
+                      : 'rgba(255,255,255,0.9)',
+                  },
+                ]}
+                placeholder="Current location or address"
+              />
 
-          {/* Debug/Test Section */}
-          {__DEV__ && (
-            <View style={styles.debugSection}>
-              <View style={styles.buttonRow}>
+              {/* TO */}
+              <Autocomplete
+                data={destinationSuggestions}
+                value={destinationText}
+                onChangeText={(text) => {
+                  setDestinationText(text);
+                  fetchSuggestions(text, setDestinationSuggestions);
+                }}
+                flatListProps={{
+                  keyExtractor: (item) => item.id,
+                  renderItem: ({ item }) => (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setDestinationText(item.place_name);
+                        setDestination(item.center);
+                        setDestinationSuggestions([]);
+                      }}
+                    >
+                      <Text style={styles.suggestion}>{item.place_name}</Text>
+                    </TouchableOpacity>
+                  ),
+                }}
+                inputContainerStyle={[
+                  styles.overlayInput,
+                  {
+                    backgroundColor: isDark
+                      ? 'rgba(50,50,50,0.9)'
+                      : 'rgba(255,255,255,0.9)',
+                  },
+                ]}
+                placeholder="Enter destination"
+              />
+
+              <View style={styles.overlayButtonRow}>
                 <Button
-                  mode="outlined"
-                  onPress={testMapboxAPI}
-                  style={[styles.button, styles.testButton]}
-                  disabled={!MAPBOX_TOKEN}
+                  mode="contained"
+                  onPress={handleFindRoute}
+                  style={styles.overlayButton}
+                  loading={geocoding}
                 >
-                  Test API
+                  {geocoding ? 'Finding...' : 'Update Route'}
                 </Button>
                 <Button
                   mode="outlined"
-                  onPress={async () => {
-                    if (originText.trim()) {
-                      const result = await geocodeLocation(originText);
-                      Alert.alert('Geocoding Test', result ? `Found: ${result[1].toFixed(4)}, ${result[0].toFixed(4)}` : 'No results found');
-                    } else {
-                      Alert.alert('Geocoding Test', 'Enter text in Origin field first');
-                    }
-                  }}
-                  style={[styles.button, styles.testButton]}
-                  disabled={!MAPBOX_TOKEN}
+                  onPress={handleClearRoute}
+                  style={styles.overlayClearButton}
+                  compact
                 >
-                  Test Geocoding
+                  Clear
                 </Button>
               </View>
-              <Text variant="bodySmall" style={styles.debugInfo}>
-                Debug: Origin: {origin ? `[${origin[0].toFixed(4)}, ${origin[1].toFixed(4)}]` : 'Not set'}
-              </Text>
-              <Text variant="bodySmall" style={styles.debugInfo}>
-                Debug: Destination: {destination ? `[${destination[0].toFixed(4)}, ${destination[1].toFixed(4)}]` : 'Not set'}
-              </Text>
             </View>
-          )}
-        </Card.Content>
-      </Card>
-
-      {/* Map Display */}
-      {showMap && origin && destination && (
-        <Card style={styles.card}>
-          <Card.Title 
-            title="Route Map" 
-            left={(props) => <IconButton {...props} icon="map" />} 
-          />
-          <Card.Content>
-            <View style={styles.mapContainer}>
-              <MapRoute origin={origin} destination={destination} />
-            </View>
-          </Card.Content>
-        </Card>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.initialContainer}>
+          <Card
+            style={[
+              styles.initialCard,
+              { backgroundColor: isDark ? '#1c1c1e' : '#fff' },
+            ]}
+          >
+            <Card.Title
+              title="Plan Your Route"
+              titleStyle={{ color: isDark ? '#fff' : '#000' }}
+              left={(props) => <IconButton {...props} icon="map-marker-path" />}
+            />
+            <Card.Content>
+              <TextInput
+                label="From (GPS or address)"
+                value={originText}
+                onChangeText={setOriginText}
+                mode="outlined"
+                style={styles.input}
+                placeholder="Use GPS or enter address"
+                right={
+                  <TextInput.Icon
+                    icon={loadingLocation ? 'loading' : 'crosshairs-gps'}
+                    onPress={handleUseCurrentLocation}
+                    disabled={loadingLocation}
+                  />
+                }
+              />
+              <TextInput
+                label="To (address or place)"
+                value={destinationText}
+                onChangeText={setDestinationText}
+                mode="outlined"
+                style={styles.input}
+                placeholder="Enter destination"
+              />
+              <View style={styles.quickIconRow}>
+                {quickCategories.map((cat) => (
+                  <Button
+                    key={cat.name}
+                    icon={() => (
+                      <MaterialCommunityIcons
+                        name={cat.icon as any}
+                        size={20}
+                        color={isDark ? '#fff' : '#333'}
+                      />
+                    )}
+                    mode="outlined"
+                    compact
+                    style={styles.quickButton}
+                    onPress={() => handleQuickCategory(cat.query)}
+                  >
+                    {cat.name}
+                  </Button>
+                ))}
+              </View>
+              <Button
+                mode="contained"
+                onPress={handleFindRoute}
+                style={styles.button}
+                loading={geocoding}
+              >
+                {geocoding ? 'Finding...' : 'Find Route'}
+              </Button>
+            </Card.Content>
+          </Card>
+        </View>
       )}
-
-      {/* Info Card */}
-      <Card style={styles.card}>
-        <Card.Title 
-          title="How to Use" 
-          left={(props) => <IconButton {...props} icon="information" />} 
-        />
-        <Card.Content>
-          <Text variant="bodyMedium" style={styles.infoText}>
-            1. Set your starting location using "Current Location" button
-          </Text>
-          <Text variant="bodyMedium" style={styles.infoText}>
-            2. Choose a destination from quick options or enter manually
-          </Text>
-          <Text variant="bodyMedium" style={styles.infoText}>
-            3. Tap "Find Route" to see directions on the map
-          </Text>
-          <Text variant="bodySmall" style={styles.noteText}>
-            Note: This uses Mapbox Directions API for route calculation
-          </Text>
-        </Card.Content>
-      </Card>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  header: {
-    padding: 20,
-    paddingBottom: 15,
-  },
-  title: {
-    fontWeight: '700',
-    color: '#2d5016',
-  },
-  subtitle: {
-    color: '#666',
-    marginTop: 5,
-  },
-  warning: {
-    color: '#ff9800',
-    marginTop: 4,
-    fontWeight: '500',
-  },
-  card: {
+  container: { flex: 1 },
+  fullScreenMapContainer: { flex: 1, position: 'relative' },
+  topOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000 },
+  inputOverlayContainer: {
     margin: 16,
-    marginTop: 0,
-    marginBottom: 16,
+    padding: 12,
+    borderRadius: 12,
+    elevation: 5,
   },
-  inputRow: {
-    marginBottom: 12,
-  },
-  input: {
-    backgroundColor: '#fff',
-  },
-  sectionLabel: {
-    marginTop: 16,
-    marginBottom: 8,
-    color: '#666',
-  },
-  chipContainer: {
+  overlayInput: { marginBottom: 8 },
+  overlayButtonRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  overlayButton: { flex: 1 },
+  overlayClearButton: { flex: 1 },
+  initialContainer: { flex: 1, justifyContent: 'center', padding: 16 },
+  initialCard: { marginBottom: 20 },
+  input: { marginBottom: 12 },
+  quickIconRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
+    justifyContent: 'space-around',
+    marginVertical: 10,
   },
-  chip: {
-    marginRight: 4,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
-  button: {
-    flex: 1,
-  },
-  findButton: {
-    // Additional styling for find button if needed
-  },
-  clearButton: {
-    // Additional styling for clear button if needed
-  },
-  mapContainer: {
-    height: 300,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  infoText: {
-    marginBottom: 8,
-    color: '#333',
-  },
-  noteText: {
-    marginTop: 8,
-    color: '#666',
-    fontStyle: 'italic',
-  },
-  debugSection: {
-    marginTop: 16,
+  quickButton: { flexGrow: 1, marginHorizontal: 4, marginVertical: 4 },
+  button: { marginTop: 8 },
+  suggestion: {
     padding: 8,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 8,
-  },
-  testButton: {
-    marginTop: 8,
-  },
-  debugInfo: {
-    fontSize: 10,
-    color: '#666',
-    marginTop: 4,
+    fontSize: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#ccc',
   },
 });

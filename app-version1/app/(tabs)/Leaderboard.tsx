@@ -1,31 +1,58 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-
-
-// fake data
-const leaderboardData = {
-  leaderboard_title: 'Top CO₂ Savers',
-  unit: 'kg CO₂e saved',
-  last_updated: '2025-11-08T12:00:00Z',
-  entries: [
-    { rank: 2, username: 'GreenThumb99', co2_saved_kg: 11890.3 },
-    { rank: 1, username: 'EcoWarrior42', co2_saved_kg: 12450.7 },
-    { rank: 3, username: 'ZeroWasteNinja', co2_saved_kg: 10320.0 },
-    { rank: 4, username: 'SolarSam', co2_saved_kg: 9870.5 },
-    { rank: 5, username: 'ForestFriend', co2_saved_kg: 9120.8 },
-    { rank: 6, username: 'BikeCommuterPro', co2_saved_kg: 8750.2 },
-    { rank: 7, username: 'VeganVanguard', co2_saved_kg: 8200.0 },
-    { rank: 8, username: 'WindPowerFan', co2_saved_kg: 7800.4 },
-    { rank: 9, username: 'RecycleMaster', co2_saved_kg: 7300.9 },
-    { rank: 10, username: 'CarbonCrusader', co2_saved_kg: 6900.1 },
-  ],
-};
+import { db } from '../../firebase/firebaseConfig';
+import { collection, getDocs, orderBy, limit, query } from 'firebase/firestore';
 
 export default function LeaderboardModern() {
-  const topThree = leaderboardData.entries.slice(0, 3);
-  const others = leaderboardData.entries.slice(3);
+  const [leaderboardData, setLeaderboardData] = useState<{
+    leaderboard_title: string;
+    unit: string;
+    last_updated: string;
+    entries: { rank: number; username: string; co2_saved_kg: number }[];
+  }>({
+    leaderboard_title: 'Top CO₂ Savers',
+    unit: 'kg CO₂e saved',
+    last_updated: new Date().toISOString(),
+    entries: [],
+  });
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const q = query(
+          collection(db, 'users'),
+          orderBy('lifetimeCO2Kg', 'desc'),
+          limit(50)
+        );
+        const snap = await getDocs(q);
+        const entries = snap.docs.map((d, idx) => {
+          const data = d.data() as any;
+          const username =
+            data?.username ||
+            (data?.email ? String(data.email).split('@')[0] : 'User');
+          const co2 = typeof data?.lifetimeCO2Kg === 'number' ? data.lifetimeCO2Kg : 0;
+          return { rank: idx + 1, username, co2_saved_kg: co2 };
+        });
+
+        setLeaderboardData((prev) => ({
+          ...prev,
+          last_updated: new Date().toISOString(),
+          entries,
+        }));
+      } catch (e) {
+        console.error('Leaderboard load error:', e);
+        setLeaderboardData((prev) => ({ ...prev, entries: [] }));
+      }
+    };
+    load();
+  }, []);
+
+  const entries = leaderboardData.entries;
+  const topThree = entries.slice(0, 3);
+  const podium = [topThree[1], topThree[0], topThree[2]].filter(Boolean);
+  const others = entries.slice(3);
 
   return (
     <ScrollView style={styles.container}>
@@ -33,14 +60,13 @@ export default function LeaderboardModern() {
         {leaderboardData.leaderboard_title}
       </Text>
 
-      {/* Top 3 podium section */}
       <View style={styles.topThreeContainer}>
-        {topThree.map((entry, index) => (
+        {podium.map((entry, index) => (
           <View
             key={entry.rank}
             style={[
               styles.topCard,
-              index === 1 && styles.middleCard, // 1st place center and higher
+              index === 1 && styles.middleCard,
             ]}
           >
             <View
@@ -64,14 +90,12 @@ export default function LeaderboardModern() {
         ))}
       </View>
 
-      {/* Table Header */}
       <View style={styles.headerRow}>
         <Text style={[styles.headerText, { flex: 0.5 }]}>#</Text>
         <Text style={[styles.headerText, { flex: 2 }]}>User</Text>
         <Text style={[styles.headerText, { flex: 1.2, textAlign: 'right' }]}>CO₂ Saved</Text>
       </View>
 
-      {/* Rest of leaderboard */}
       {others.map((entry) => (
         <View key={entry.rank} style={styles.row}>
           <Text style={styles.rank}>{entry.rank}</Text>
@@ -96,8 +120,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 30,
   },
-
-  // --- Top 3 Section ---
   topThreeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -160,8 +182,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 4,
   },
-
-  //  Table Layout for Rest
   headerRow: {
     flexDirection: 'row',
     paddingVertical: 10,

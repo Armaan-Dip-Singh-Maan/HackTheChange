@@ -1,16 +1,34 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   View,
   StyleSheet,
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from "react-native";
 import { Text, TextInput as PaperInput, Button } from "react-native-paper";
-import { Link, router } from "expo-router";
+import { Link, router, useRouter } from "expo-router";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "../firebase/firebaseConfig"; // adjust path if needed
+import { auth, db } from "../firebase/firebaseConfig";
+
+const ACCENT = "#16A34A";
+const BG = "#F5F7FA";
+const CARD_BG = "#FFFFFF";
+const OUTLINE = "#E5E7EB";
+const TEXT = "#111827";
+const LABEL = "#374151";
+
+const INPUT_THEME = {
+  colors: {
+    primary: ACCENT,
+    outline: OUTLINE,
+    onSurface: TEXT,
+    onSurfaceVariant: LABEL,
+    background: "transparent",
+  },
+};
 
 export default function SignupScreen() {
   const [email, setEmail] = useState("");
@@ -21,40 +39,55 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSignup = async () => {
+  const navigation = useRouter();
+
+  const handleSignup = useCallback(async () => {
+    // Validate password match
     if (password !== confirm) {
       setError("Passwords do not match!");
       return;
     }
 
-    setLoading(true);
+    // Reset states
     setError("");
+    setLoading(true);
+
     try {
-      // 1. Create user in Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
-
-      const user = userCredential.user;
-
-      // 2. Create user document in Firestore
-      await setDoc(doc(db, "users", user.uid), {
-        email: user.email,
+      // Step 1: Create Firebase Auth account
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Step 2: Create Firestore document
+      await setDoc(doc(db, "users", cred.user.uid), {
+        email: cred.user.email,
         createdAt: serverTimestamp(),
-        totalCO2Saved: 0, // placeholder for your CO₂ tracking logic
+        totalCO2Saved: 0,
       });
 
-      console.log("✅ Account created successfully:", user.email);
-      router.replace("/(tabs)/profile"); // or your home screen route
-    } catch (err: any) {
-    console.error("❌ Signup error:", err); // full object
-    setError(err.message); // show real Firebase message
-    } finally {
+      // Step 3: Clear loading and show success message
+      setLoading(false);
+      
+      // Step 4: Show alert and navigate
+      Alert.alert(
+        "Success",
+        "Account created successfully! Please sign in.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              // Navigate after alert is dismissed
+              navigation.push("/login");
+            },
+          },
+        ],
+        { cancelable: false }
+      );
+
+    } catch (error: any) {
+      console.error("Signup error:", error);
+      setError(error?.message ?? "Error creating account. Please try again.");
       setLoading(false);
     }
-  };
+  }, [email, password, confirm, navigation]);
 
   return (
     <KeyboardAvoidingView
@@ -71,9 +104,18 @@ export default function SignupScreen() {
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
+          autoCorrect={false}
+          spellCheck={false}
           keyboardType="email-address"
+          autoComplete="email"
+          textContentType="emailAddress"
           mode="outlined"
+          theme={INPUT_THEME}
           style={styles.input}
+          contentStyle={styles.inputContent}
+          outlineColor={OUTLINE}
+          activeOutlineColor={ACCENT}
+          selectionColor={ACCENT}
         />
 
         <PaperInput
@@ -81,12 +123,22 @@ export default function SignupScreen() {
           value={password}
           onChangeText={setPassword}
           secureTextEntry={!showPassword}
+          autoCorrect={false}
+          spellCheck={false}
+          autoComplete="password"
+          textContentType="password"
           mode="outlined"
+          theme={INPUT_THEME}
           style={styles.input}
+          contentStyle={styles.inputContent}
+          outlineColor={OUTLINE}
+          activeOutlineColor={ACCENT}
+          selectionColor={ACCENT}
           right={
             <PaperInput.Icon
               icon={showPassword ? "eye-off" : "eye"}
-              onPress={() => setShowPassword((prev) => !prev)}
+              onPress={() => setShowPassword((p) => !p)}
+              forceTextInputFocus={false}
             />
           }
         />
@@ -96,12 +148,22 @@ export default function SignupScreen() {
           value={confirm}
           onChangeText={setConfirm}
           secureTextEntry={!showConfirm}
+          autoCorrect={false}
+          spellCheck={false}
+          autoComplete="password-new"
+          textContentType="newPassword"
           mode="outlined"
+          theme={INPUT_THEME}
           style={styles.input}
+          contentStyle={styles.inputContent}
+          outlineColor={OUTLINE}
+          activeOutlineColor={ACCENT}
+          selectionColor={ACCENT}
           right={
             <PaperInput.Icon
               icon={showConfirm ? "eye-off" : "eye"}
-              onPress={() => setShowConfirm((prev) => !prev)}
+              onPress={() => setShowConfirm((p) => !p)}
+              forceTextInputFocus={false}
             />
           }
         />
@@ -114,14 +176,15 @@ export default function SignupScreen() {
           loading={loading}
           disabled={loading}
           style={styles.button}
+          buttonColor={ACCENT}
+          textColor="#FFFFFF"
         >
           Sign Up
         </Button>
 
-        <TouchableOpacity>
+        <TouchableOpacity activeOpacity={0.7}>
           <Link href="/login" style={styles.link}>
-            Already have an account?{" "}
-            <Text style={{ fontWeight: "600" }}>Login</Text>
+            Already have an account? <Text style={styles.linkStrong}>Login</Text>
           </Link>
         </TouchableOpacity>
       </View>
@@ -134,40 +197,53 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     paddingHorizontal: 24,
-    backgroundColor: "#F5F5F7",
+    backgroundColor: BG,
   },
   card: {
-    backgroundColor: "white",
+    backgroundColor: CARD_BG,
     padding: 28,
-    borderRadius: 16,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: OUTLINE,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
   },
   title: {
     textAlign: "center",
     marginBottom: 24,
-    fontWeight: "600",
+    fontWeight: "800",
+    letterSpacing: 0.2,
+    color: TEXT,
   },
   input: {
     marginBottom: 14,
   },
+  inputContent: {
+    backgroundColor: "transparent",
+    paddingVertical: 12,
+  },
   error: {
-    color: "red",
+    color: "#DC2626",
     textAlign: "center",
     marginBottom: 8,
+    fontSize: 13,
   },
   button: {
     marginTop: 20,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   link: {
     textAlign: "center",
-    color: "#6C47FF",
+    color: "#065F46",
     marginTop: 18,
     fontSize: 14,
+  },
+  linkStrong: {
+    fontWeight: "700",
+    color: "#065F46",
   },
 });

@@ -9,7 +9,26 @@ import {
 import { Text, TextInput as PaperInput, Button } from "react-native-paper";
 import { Link, router } from "expo-router";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../firebase/firebaseConfig"; // adjust the path if needed
+import { auth } from "../firebase/firebaseConfig";
+
+const ACCENT = "#16A34A";
+const BG = "#F5F7FF";
+const CARD_BG = "#FFFFFF";
+const OUTLINE = "#E5E7EB";
+const TEXT = "#111827";
+const LABEL = "#374151";
+const PLACEHOLDER = "#9CA3AF";
+
+const INPUT_THEME = {
+  colors: {
+    primary: ACCENT,
+    outline: OUTLINE,
+    onSurface: TEXT,
+    onSurfaceVariant: LABEL,
+    background: "transparent",
+    placeholder: PLACEHOLDER,
+  },
+};
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -23,10 +42,8 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      console.log("✅ Login successful");
-      router.replace("/(tabs)/home"); // navigate after success
+      router.replace("/(tabs)/home");
     } catch (err: any) {
-      console.error("❌ Login error:", err.message);
       setError("Invalid credentials or network error. Please try again.");
     } finally {
       setLoading(false);
@@ -44,26 +61,45 @@ export default function LoginScreen() {
         </Text>
 
         <PaperInput
-          label="Email"
+          placeholder="Email"
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
+          autoCorrect={false}
+          spellCheck={false}
           keyboardType="email-address"
+          autoComplete="email"
+          textContentType="emailAddress"
           mode="outlined"
+          theme={INPUT_THEME}
           style={styles.input}
+          contentStyle={styles.inputContent}
+          outlineColor={OUTLINE}
+          activeOutlineColor={ACCENT}
+          selectionColor={ACCENT}
         />
 
         <PaperInput
-          label="Password"
+          placeholder="Password"
           value={password}
           onChangeText={setPassword}
           secureTextEntry={!showPassword}
+          autoCorrect={false}
+          spellCheck={false}
+          autoComplete="password"
+          textContentType="password"
           mode="outlined"
+          theme={INPUT_THEME}
           style={styles.input}
+          contentStyle={styles.inputContent}
+          outlineColor={OUTLINE}
+          activeOutlineColor={ACCENT}
+          selectionColor={ACCENT}
           right={
             <PaperInput.Icon
               icon={showPassword ? "eye-off" : "eye"}
               onPress={() => setShowPassword((prev) => !prev)}
+              forceTextInputFocus={false}
             />
           }
         />
@@ -76,14 +112,15 @@ export default function LoginScreen() {
           loading={loading}
           disabled={loading}
           style={styles.button}
+          buttonColor={ACCENT}
+          textColor="#FFFFFF"
         >
           Login
         </Button>
 
-        <TouchableOpacity>
+        <TouchableOpacity activeOpacity={0.7}>
           <Link href="/signup" style={styles.link}>
-            Don’t have an account?{" "}
-            <Text style={{ fontWeight: "600" }}>Sign up</Text>
+            Don&apos;t have an account? <Text style={styles.linkStrong}>Sign up</Text>
           </Link>
         </TouchableOpacity>
       </View>
@@ -96,40 +133,54 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     paddingHorizontal: 24,
-    backgroundColor: "#F5F5F7",
+    backgroundColor: BG,
   },
   card: {
-    backgroundColor: "white",
+    backgroundColor: CARD_BG,
     padding: 28,
-    borderRadius: 16,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: OUTLINE,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
   },
   title: {
     textAlign: "center",
     marginBottom: 24,
-    fontWeight: "600",
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    color: TEXT,
   },
   input: {
     marginBottom: 14,
+    backgroundColor: "#FCFCFD",
+  },
+  inputContent: {
+    backgroundColor: "transparent",
+    paddingVertical: 12,
   },
   error: {
-    color: "red",
+    color: "#DC2626",
     textAlign: "center",
     marginBottom: 8,
+    fontSize: 13,
   },
   button: {
     marginTop: 16,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   link: {
     textAlign: "center",
-    color: "#6C47FF",
+    color: "#065F46",
     marginTop: 18,
     fontSize: 14,
+  },
+  linkStrong: {
+    fontWeight: "700",
+    color: "#065F46",
   },
 });

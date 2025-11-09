@@ -1,11 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
+import { View, ScrollView, StyleSheet, useColorScheme } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { db } from '../../firebase/firebaseConfig';
 import { collection, getDocs, orderBy, limit, query } from 'firebase/firestore';
 
 export default function LeaderboardModern() {
+
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const textColor = isDark ? '#fff' : '#000';
+
   const [leaderboardData, setLeaderboardData] = useState<{
     leaderboard_title: string;
     unit: string;
@@ -55,7 +60,7 @@ export default function LeaderboardModern() {
   const others = entries.slice(3);
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, { backgroundColor: isDark ? '#000' : '#fff' }]}>
       <Text variant="headlineLarge" style={styles.title}>
         {leaderboardData.leaderboard_title}
       </Text>
@@ -91,16 +96,16 @@ export default function LeaderboardModern() {
       </View>
 
       <View style={styles.headerRow}>
-        <Text style={[styles.headerText, { flex: 0.5 }]}>#</Text>
-        <Text style={[styles.headerText, { flex: 2 }]}>User</Text>
-        <Text style={[styles.headerText, { flex: 1.2, textAlign: 'right' }]}>CO₂ Saved</Text>
+        <Text style={[styles.headerText, { flex: 0.5, color: textColor }]}>#</Text>
+        <Text style={[styles.headerText, { flex: 2, color: textColor }]}>User</Text>
+        <Text style={[styles.headerText, { flex: 1.2, textAlign: 'right', color: textColor }]}>CO₂ Saved</Text>
       </View>
 
       {others.map((entry) => (
         <View key={entry.rank} style={styles.row}>
-          <Text style={styles.rank}>{entry.rank}</Text>
-          <Text style={styles.name}>{entry.username}</Text>
-          <Text style={styles.value}>
+          <Text style={[styles.rank, { color: isDark ? '#fff' : '#000' }]}>{entry.rank}</Text>
+          <Text style={[styles.name, { color: isDark ? '#fff' : '#000' }]}>{entry.username}</Text>
+          <Text style={[styles.value, { color: isDark ? '#fff' : '#000' }]}>
             {entry.co2_saved_kg.toLocaleString()} {leaderboardData.unit.split(' ')[0]}
           </Text>
         </View>
@@ -128,7 +133,7 @@ const styles = StyleSheet.create({
   },
   topCard: {
     alignItems: 'center',
-    backgroundColor: '#6b53cbff',
+    backgroundColor: '#16A34A',
     borderRadius: 16,
     padding: 10,
     width: 100,
@@ -186,7 +191,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderColor: '#ddd',
+    borderColor: 'rgba(22, 163, 74, 0.8)',
     marginBottom: 6,
   },
   headerText: {
@@ -199,7 +204,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 0.5,
-    borderColor: '#eee',
+    borderColor: 'rgba(22, 163, 74, 0.0)',
   },
   rank: {
     flex: 0.5,

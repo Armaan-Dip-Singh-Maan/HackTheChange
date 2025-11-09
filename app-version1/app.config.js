@@ -2,11 +2,12 @@ import "dotenv/config";
 
 export default {
   expo: {
-    name: "app-version1",
+    name: "",
     slug: "app-version1",
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
+    iconWidth: 1000,
     scheme: "appversion1",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
@@ -15,29 +16,29 @@ export default {
     },
     android: {
       adaptiveIcon: {
-        backgroundColor: "#E6F4FE",
-        foregroundImage: "./assets/images/android-icon-foreground.png",
-        backgroundImage: "./assets/images/android-icon-background.png",
-        monochromeImage: "./assets/images/android-icon-monochrome.png",
+        backgroundColor: "#000000",
+        foregroundImage: "./assets/images/icon.png",
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
     },
     web: {
       output: "static",
-      favicon: "./assets/images/favicon.png",
+      favicon: "./assets/images/icon.png",
     },
     plugins: [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          image: "./assets/images/splash-icon.png",
-          imageWidth: 200,
-          resizeMode: "contain",
-          backgroundColor: "#ffffff",
+          image: "./assets/images/icon.png",
+          imageResizeMode: "contain",
+          backgroundColor: "#4ade80",
+          imageWidth: 1000,
+          imageHeight: 1000,
+          splashScreenScale: 2,
           dark: {
-            backgroundColor: "#000000",
+            backgroundColor: "#16a34a",
           },
         },
       ],

@@ -54,7 +54,8 @@ const MapRoute: React.FC<MapRouteProps> = ({
     return typeof lng === "number" && typeof lat === "number" && lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90;
   };
 
-  const sameCoord = (a: Coordinate, b: Coordinate) => Array.isArray(a) && Array.isArray(b) && a.length === 2 && b.length === 2 && a[0] === b[0] && a[1] === b[1];
+  const sameCoord = (a: Coordinate, b: Coordinate) =>
+    Array.isArray(a) && Array.isArray(b) && a.length === 2 && b.length === 2 && a[0] === b[0] && a[1] === b[1];
 
   useEffect(() => {
     if (origin && destination && !sameCoord(origin, destination)) fetchDirections(origin, destination);
@@ -79,7 +80,10 @@ const MapRoute: React.FC<MapRouteProps> = ({
       if (!data.routes?.length) throw new Error("No routes found");
       const processed = data.routes.map((r: any, i: number) => ({
         index: i,
-        coordinates: r.geometry.coordinates.map((c: number[]) => ({ latitude: c[1], longitude: c[0] })),
+        coordinates: r.geometry.coordinates.map((c: number[]) => ({
+          latitude: c[1],
+          longitude: c[0],
+        })),
         distanceKm: (r.distance / 1000).toFixed(1),
         durationMin: Math.round(r.duration / 60),
         distanceM: r.distance,
@@ -145,13 +149,16 @@ const MapRoute: React.FC<MapRouteProps> = ({
     );
   }
 
-  const bestSaved = co2PerRoute && co2PerRoute.length > 0 ? Math.max(...co2PerRoute.filter((n) => typeof n === "number")) : undefined;
+  const bestSaved =
+    co2PerRoute && co2PerRoute.length > 0 ? Math.max(...co2PerRoute.filter((n) => typeof n === "number")) : undefined;
 
   if (error) {
     return (
       <View style={styles.center}>
         <Text style={styles.errorText}>Error: {error}</Text>
-        <Text style={styles.errorSubtext}>{!MAPBOX_TOKEN ? "Mapbox token not configured" : "Check your internet connection"}</Text>
+        <Text style={styles.errorSubtext}>
+          {!MAPBOX_TOKEN ? "Mapbox token not configured" : "Check your internet connection"}
+        </Text>
       </View>
     );
   }
@@ -175,7 +182,13 @@ const MapRoute: React.FC<MapRouteProps> = ({
             <MapboxGL.ShapeSource key={`route-${i}`} id={`routeSource${i}`} shape={r.mapboxFeature}>
               <MapboxGL.LineLayer
                 id={`routeLine${i}`}
-                style={{ lineColor: i === selectedRouteIndex ? "#007AFF" : "#999", lineWidth: i === selectedRouteIndex ? 5 : 3, lineCap: "round", lineJoin: "round", lineOpacity: i === selectedRouteIndex ? 1 : 0.6 }}
+                style={{
+                  lineColor: i === selectedRouteIndex ? "#007AFF" : "#999",
+                  lineWidth: i === selectedRouteIndex ? 5 : 3,
+                  lineCap: "round",
+                  lineJoin: "round",
+                  lineOpacity: i === selectedRouteIndex ? 1 : 0.6,
+                }}
               />
             </MapboxGL.ShapeSource>
           ))}
@@ -205,7 +218,12 @@ const MapRoute: React.FC<MapRouteProps> = ({
         <Marker coordinate={{ latitude: origin[1], longitude: origin[0] }} title="Origin" pinColor="green" />
         <Marker coordinate={{ latitude: destination[1], longitude: destination[0] }} title="Destination" pinColor="red" />
         {routes.map((r, i) => (
-          <Polyline key={`poly-${i}`} coordinates={r.coordinates} strokeColor={i === selectedRouteIndex ? "#007AFF" : "#999"} strokeWidth={i === selectedRouteIndex ? 5 : 3} />
+          <Polyline
+            key={`poly-${i}`}
+            coordinates={r.coordinates}
+            strokeColor={i === selectedRouteIndex ? "#007AFF" : "#999"}
+            strokeWidth={i === selectedRouteIndex ? 5 : 3}
+          />
         ))}
       </MapView>
 
@@ -216,8 +234,14 @@ const MapRoute: React.FC<MapRouteProps> = ({
       )}
 
       {!hideRouteBox && routes.length > 0 && (
-        <View style={[styles.routeSelectionContainer, { backgroundColor: isDark ? "rgba(40,40,40,0.95)" : "rgba(255,255,255,0.95)" }]}>
+        <View
+          style={[
+            styles.routeSelectionContainer,
+            { backgroundColor: isDark ? "rgba(40,40,40,0.95)" : "rgba(255,255,255,0.95)" },
+          ]}
+        >
           <Text style={[styles.routeSelectionTitle, { color: isDark ? "#fff" : "#333" }]}>Choose Your Route:</Text>
+
           {routes.map((r, i) => (
             <TouchableOpacity
               key={`route-option-${i}`}
@@ -227,28 +251,38 @@ const MapRoute: React.FC<MapRouteProps> = ({
                 if (typeof onRouteSelected === "function") onRouteSelected(i);
               }}
             >
-              <View style={styles.routeHeader}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text style={[styles.routeTitle, i === selectedRouteIndex && styles.selectedRouteTitle, { color: isDark ? "#ddd" : "#333" }]}>{i === 0 ? "Fastest" : "Alternative"}</Text>
-                  {typeof co2PerRoute?.[i] === "number" && (
-                    <Text style={[styles.co2Inline, bestSaved !== undefined && co2PerRoute?.[i] === bestSaved && styles.co2InlineGreen]}>
-                      {"  "}{co2PerRoute?.[i].toFixed(3)} kg CO₂ saved
-                    </Text>
-                  )}
-                </View>
-                <View style={styles.routeDetails}>
-                  <Text style={[styles.routeDistance, i === selectedRouteIndex && styles.selectedRouteText, { color: isDark ? "#aaa" : "#666" }]}>{r.distanceKm} km</Text>
-                  <Text style={[styles.routeTime, i === selectedRouteIndex && styles.selectedRouteText, { color: isDark ? "#aaa" : "#666" }]}>{r.durationMin} min</Text>
-                </View>
+              <View style={{ flexDirection: "column" }}>
+                <Text
+                  style={[
+                    styles.routeTitle,
+                    i === selectedRouteIndex && styles.selectedRouteTitle,
+                    { color: isDark ? "#ddd" : "#333", marginBottom: 2 },
+                  ]}
+                >
+                  {i === 0 ? "Fastest" : "Alternative"}
+                </Text>
+
+                <Text
+                  style={[
+                    {
+                      color: isDark ? "#666" : "#444",
+                      fontSize: 14,
+                      fontWeight: "600",
+                    },
+                    bestSaved !== undefined &&
+                      co2PerRoute?.[i] === bestSaved &&
+                      styles.co2InlineGreen,
+                  ]}
+                >
+                  {typeof co2PerRoute?.[i] === "number" && co2PerRoute?.[i] > 0
+                    ? `${co2PerRoute?.[i].toFixed(3)} kg CO₂ saved • ${r.distanceKm} km • ${r.durationMin} min`
+                    : `${r.distanceKm} km • ${r.durationMin} min`}
+                </Text>
               </View>
             </TouchableOpacity>
           ))}
         </View>
       )}
-
-      <View style={styles.platformIndicator}>
-        <Text style={styles.platformText}>{MapboxGL ? "Using Native Mapbox" : "Using React Native Maps"}</Text>
-      </View>
     </View>
   );
 };
@@ -257,26 +291,48 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
-  loadingOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(255,255,255,0.8)" },
+  loadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.8)",
+  },
   annotationContainer: { width: 30, height: 30, alignItems: "center", justifyContent: "center" },
   annotationFill: { width: 20, height: 20, borderRadius: 10, backgroundColor: "#007AFF" },
   errorText: { fontSize: 16, color: "#FF3B30", textAlign: "center", marginBottom: 8 },
   errorSubtext: { fontSize: 14, color: "#666", textAlign: "center" },
-  platformIndicator: { position: "absolute", bottom: 10, left: 10, backgroundColor: "rgba(0,0,0,0.7)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  platformIndicator: {
+    position: "absolute",
+    bottom: 10,
+    left: 10,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
   platformText: { color: "#fff", fontSize: 12 },
-  routeSelectionContainer: { position: "absolute", bottom: 20, left: 16, right: 16, padding: 16, borderRadius: 12, elevation: 5, shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.2, shadowRadius: 8 },
+  routeSelectionContainer: {
+    position: "absolute",
+    bottom: 20,
+    left: 16,
+    right: 16,
+    padding: 16,
+    borderRadius: 12,
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
   routeSelectionTitle: { fontSize: 16, fontWeight: "600", marginBottom: 8 },
-  routeOption: { backgroundColor: "rgba(240,240,240,0.9)", padding: 12, borderRadius: 6, marginBottom: 6, borderWidth: 1, borderColor: "transparent" },
+  routeOption: { padding: 12, borderRadius: 6, marginBottom: 6, borderWidth: 1, borderColor: "transparent" },
   selectedRouteOption: { backgroundColor: "rgba(0,122,255,0.1)", borderColor: "#007AFF" },
-  routeHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   routeTitle: { fontSize: 14, fontWeight: "600" },
   selectedRouteTitle: { color: "#007AFF" },
-  routeDetails: { flexDirection: "row", alignItems: "center", gap: 8 },
-  routeDistance: { fontSize: 14, fontWeight: "500" },
-  routeTime: { fontSize: 14, fontWeight: "500" },
-  selectedRouteText: { color: "#007AFF" },
-  routeLabel: { fontSize: 12, marginTop: 4, fontStyle: "italic" },
-  co2Inline: { marginLeft: 6, fontSize: 13, fontWeight: "600", color: "#555" },
   co2InlineGreen: { color: "#16A34A" },
 });
 

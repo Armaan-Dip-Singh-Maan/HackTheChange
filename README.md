@@ -89,7 +89,7 @@ text
 
 - Eknor Singh - Full-stack developer  
 - Luqman Ajani - Frontend developer  
-- Yasir - Product thinker & sustainability advocate  
+- Yasir - Product developer & Full-stack developer 
 - Armaan - AI/ML intern & freelancer  
 
 ---

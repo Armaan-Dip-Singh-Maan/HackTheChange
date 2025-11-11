@@ -10,7 +10,7 @@ NavGreen is a web app designed to help drivers reduce their carbon footprint by 
 - **CO₂ Emission Calculator:** Calculates emissions saved based on distance and vehicle type.
 - **Points & Leaderboards:** Earn points for CO₂ saved and see your rank on the leaderboard.
 - **User Dashboard:** Track your total impact, recent trips, and ranking.
-- **Responsive UI:** Built with React Native (Expo Go) and Tailwind CSS for fast, modern user experience.
+- **Responsive UI:** Built with React Native (Expo Go).
 - **Scalable Backend:** Serverless backend using Firebase Functions and Firestore with secure Firebase Authentication.
 
 ---
@@ -19,16 +19,13 @@ NavGreen is a web app designed to help drivers reduce their carbon footprint by 
 
 ### Prerequisites
 
-- Node.js (version 18 or higher recommended)
+- React with Expo 
 - Firebase account with Firestore and Functions enabled
 - Mapbox account for API keys
 
 ### Installation
 
 1. Clone the repository
-
-git clone https://github.com/Armaan-Dip-Singh-Maan/HackTheChange
-cd navgreen
 
 text
 
@@ -52,27 +49,15 @@ text
 
 ### Running Locally
 
-npm run start
+npx expo start
 
 text
 
-Open [http://localhost:19006](http://localhost:19006) in your browser or use Expo Go on your mobile device.
+scan the QR code that shows up and use Expo Go on your mobile device 
+(NOTE: App Store deployment in the works!)
 
 ---
 
-## Deployment
-
-The frontend is deployed on Vercel (if using web) and the backend uses Firebase Functions. For production deployment:
-
-- Push your code to GitHub
-- Connect the repo to your chosen hosting (Vercel for web, Expo for mobile)
-- Deploy Firebase functions with:
-
-firebase deploy --only functions,firestore
-
-text
-
----
 
 ## Project Structure
 
@@ -91,14 +76,5 @@ text
 - Luqman Ajani - Frontend developer  
 - Yasir - Product developer & Full-stack developer 
 - Armaan - AI/ML intern & freelancer  
-
----
-
-## Future Improvements
-
-- Real-time GPS tracking for automatic route logging  
-- Personalized AI route recommendations  
-- Native mobile apps for iOS and Android  
-- Deeper gamification with community challenges  
-- Integration with ride-sharing and city transit systems  
+ 
 

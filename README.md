@@ -102,9 +102,3 @@ text
 - Deeper gamification with community challenges  
 - Integration with ride-sharing and city transit systems  
 
----
-
-## License
-
-This project is licensed under the MIT License.
-This README now reflects NavGreen and your specific tech stack (React Native, Expo Go, Firebase Auth). Would you like me to assist with other project docs or deployment guides?
